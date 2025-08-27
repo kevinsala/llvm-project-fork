@@ -66,6 +66,7 @@ cudaError_t cudaMallocManaged(void **devPtr, size_t size, unsigned int flags) {
 cudaError_t cudaFree(void *devPtr) {
   void *MPtrFromTLB = TLB.pop(devPtr);
   void *MPtrFromDevice = objsan::unregisterDeviceMemory(devPtr);
+  fprintf(stderr, "unregistered vptr %p mptrtlb %p mptrdev %p\n", devPtr, MPtrFromTLB, MPtrFromDevice);
   if (MPtrFromTLB == MPtrFromDevice) {
     devPtr = MPtrFromTLB;
   } else {

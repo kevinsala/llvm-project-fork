@@ -93,7 +93,7 @@ char *__objsan_register_object(char *MPtr, uint64_t ObjSize,
 OBJSAN_BIG_API_ATTRS
 char *__objsan_post_alloca(char *MPtr, int64_t ObjSize,
                            int8_t RequiresTemporalCheck) {
-  PRINTF("%s %p %lli\n", __PRETTY_FUNCTION__, MPtr, ObjSize);
+  PRINTF("%s %p %" PRId64 "\n", __PRETTY_FUNCTION__, MPtr, ObjSize);
   return __objsan_register_object(MPtr, ObjSize, RequiresTemporalCheck);
 }
 
@@ -102,12 +102,11 @@ __attribute__((optnone, noinline)) char *
 __objsan_pre_global(char *MPtr, int32_t ObjSize, int8_t IsDefinition,
                     int8_t RequiresTemporalCheck) {
   [[maybe_unused]] uint8_t EncodingNo = EncodingCommonTy::getEncodingNo(MPtr);
-  PRINTF("%s %p %i [%i] (%i)\n", __PRETTY_FUNCTION__, MPtr, ObjSize, EncodingNo,
-         IsDefinition);
+  //PRINTF("%s %p %d [%d] (%d)\n", __PRETTY_FUNCTION__, MPtr, ObjSize, EncodingNo, IsDefinition);
   if (!IsDefinition)
     return MPtr;
   auto *VPtr = __objsan_register_object(MPtr, ObjSize, RequiresTemporalCheck);
-  PRINTF(" -> %p\n", VPtr);
+  //PRINTF(" -> %p\n", VPtr);
   return VPtr;
 }
 
@@ -220,7 +219,7 @@ void __objsan_free_alloca(char *__restrict VPtr) {
 OBJSAN_SMALL_API_ATTRS
 void __objsan_post_function(int32_t NumAllocas,
                             char *__restrict *__restrict Allocas) {
-  // PRINTF("%s start\n", __PRETTY_FUNCTION__);
+  PRINTF("%s start\n", __PRETTY_FUNCTION__);
   for (int32_t I = 0; I < NumAllocas; ++I)
     __objsan_free_alloca(Allocas[I]);
 }
@@ -292,8 +291,8 @@ __objsan_post_base_pointer_info(char *__restrict VPtr, uint64_t *SizePtr,
 OBJSAN_SMALL_API_ATTRS
 void *__objsan_get_mptr(char *__restrict VPtr, char *__restrict BaseMPtr,
                         uint8_t EncodingNo) {
-  PRINTF("%s %p %p %i start\n", __PRETTY_FUNCTION__, VPtr, BaseMPtr,
-         EncodingNo);
+  //PRINTF("%s %p %p %i start\n", __PRETTY_FUNCTION__, VPtr, BaseMPtr,
+  //       EncodingNo);
   if (!EncodingNo) [[unlikely]]
     return VPtr;
   int64_t NumOffsetBits;
@@ -337,7 +336,7 @@ char *__objsan_post_loop_value_range(char *BeginMPtr, char *EndMPtr,
     PRINTF("r bad %p-%p %p %" PRId64 " +%" PRIu64 " %" PRIu64 " %i [%i:%i]\n",
            BeginMPtr, EndMPtr, BaseMPtr, LoopSize, MaxOffset, ObjSize,
            EncodingNo, MinID, MaxID);
-    return nullptr;
+    return (char *)(intptr_t)(-1);
   }
   return /* not null */ (char *)(0x1);
 }
@@ -393,7 +392,7 @@ void *__objsan_pre_load(char *VPtr, char *BaseMPtr, char *LVRI,
     FPRINTF("l bad (%p) %p %p %p %" PRIu64 " %" PRIu64 " %i %i [%i]\n", VPtr,
             MPtr, BaseMPtr, LVRI, AccessSize, ObjSize, EncodingNo, WasChecked,
             ID);
-    return nullptr;
+    return (void *)(intptr_t)(-1);
   }
   return MPtr;
 }
@@ -424,7 +423,7 @@ void *__objsan_pre_store(char *VPtr, char *BaseMPtr, char *LVRI,
     FPRINTF("s bad (%p) %p %p %p %" PRIu64 " %" PRIu64 " %i %i [%i]\n", VPtr,
             MPtr, BaseMPtr, LVRI, AccessSize, ObjSize, EncodingNo, WasChecked,
             ID);
-    return nullptr;
+    return (void *)(intptr_t)(-1);
   }
   return MPtr;
 }

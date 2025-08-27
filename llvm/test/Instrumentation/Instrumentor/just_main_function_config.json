@@ -1,0 +1,15 @@
+{
+  "Base": {
+    "RuntimeName": "__instrumentor_",
+    "PrintRuntimeSignatures": false
+  },
+  "main_function": {
+    "EnabledPre": true,
+    "EnabledPost": true,
+    "ArgC": true,
+    "ArgV": true,
+    "ReturnValue": true,
+    "ReplaceArgumentValues": true,
+    "ReplaceReturnValue": true
+  }
+}

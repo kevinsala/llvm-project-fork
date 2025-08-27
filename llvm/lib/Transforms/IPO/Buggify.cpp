@@ -195,17 +195,17 @@ void BuggifyInstrumentationConfig::populate(InstrumentorIRBuilderTy &IIRB) {
   };
   SIC->init(*this, IIRB, &SICConfig);
 
-  //FunctionIO::ConfigTy FICConfig(/*Enable=*/false);
-  //FICConfig.set(FunctionIO::PassName);
-  //FICConfig.set(FunctionIO::PassAddress);
-  //FICConfig.set(FunctionIO::PassNumArguments);
-  //FICConfig.set(FunctionIO::PassArguments);
-  //FICConfig.set(FunctionIO::ReplaceArguments);
-  //auto *FIC = InstrumentationConfig::allocate<FunctionIO>(/*IsPRE=*/true);
-  //FIC->CB = [&](Value &V) {
-  //  return BI.shouldInstrumentFunction(cast<Function>(V));
-  //};
-  //FIC->init(*this, IIRB.Ctx, &FICConfig);
+  FunctionIO::ConfigTy FICConfig(/*Enable=*/false);
+  FICConfig.set(FunctionIO::PassName);
+  FICConfig.set(FunctionIO::PassAddress);
+  FICConfig.set(FunctionIO::PassNumArguments);
+  FICConfig.set(FunctionIO::PassArguments);
+  FICConfig.set(FunctionIO::ReplaceArguments);
+  auto *FIC = InstrumentationConfig::allocate<FunctionIO>(/*IsPRE=*/true);
+  FIC->CB = [&](Value &V) {
+    return BI.shouldInstrumentFunction(cast<Function>(V));
+  };
+  FIC->init(*this, IIRB.Ctx, &FICConfig);
 
   AllocaIO::ConfigTy PreAICConfig(/*Enable=*/false);
   PreAICConfig.set(AllocaIO::PassSize);

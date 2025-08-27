@@ -82,6 +82,9 @@ static constexpr char AdapterPrefix[] = "__adapter_";
 [[maybe_unused]] static constexpr uint8_t LargeObjectEnc = 2;
 [[maybe_unused]] static constexpr uint64_t SmallObjectSize = (1LL << 12);
 
+static volatile bool ContinueDebug1 = false;
+static volatile bool ContinueDebug2 = false;
+
 // Also in objsan_ir_rt.cpp
 static uint32_t MaxObjSizeForShadow = 64;
 
@@ -307,18 +310,44 @@ struct LightSanInstrumentationConfig : public InstrumentationConfig {
       BasePointerSizeOffsetMap;
 
   Value *getBasePointerObjectSize(Value &Ptr, InstrumentorIRBuilderTy &IIRB) {
+//    errs() << "entering function getBasePointerObjectSize for value:";
+//    Ptr.dump();
     Function *Fn = IIRB.IRB.GetInsertBlock()->getParent();
     auto Size = AIC->getObjectSize(&Ptr);
-    if (Size != ~0UL)
+    if (Size != ~0UL) {
+//      errs() << "  -> returning size reported by attributor: " << Size << "\n";
       return IIRB.IRB.getInt64(Size);
+    }
     Value *Obj = getUnderlyingObjectRecursive(&Ptr);
+//    errs() << "  found underlying object\n";
+//    Obj->dump();
+
+//    if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Obj)) {
+//      if (GV->getName() == "_ZZN3cub28DeviceReduceSingleTileKernelINS_18DeviceReducePolicyImiiN6thrust4plusIiEEE9Policy600EPmPiiS4_iEEvT0_T1_T2_T3_T4_E12temp_storage")
+//        while (!ContinueDebug2);
+//    }
+
     auto EBPI = BasePointerSizeOffsetMap.lookup({Obj, Fn});
     if (!EBPI.ObjectSize) {
+//      errs() << "  could not find it in the map\n";
       getBasePointerInfo(*Obj, IIRB);
       EBPI = BasePointerSizeOffsetMap[{Obj, Fn}];
+//      errs() << "  got the base pointer info, looking the map again\n";
     }
-    if (EBPI.ObjectSizePtr)
+
+//    errs() << "  the base pointer info is:\n";
+//    errs() << "    objsize " << EBPI.ObjectSize << ":";
+//    if (EBPI.ObjectSize) EBPI.ObjectSize->dump(); else errs() << "none\n";
+//    errs() << "    objsizeptr " << EBPI.ObjectSizePtr << ":";
+//    if (EBPI.ObjectSizePtr) EBPI.ObjectSizePtr->dump(); else errs() << "none\n";
+//    errs() << "    objenc " << EBPI.EncodingNo << ":";
+//    if (EBPI.EncodingNo) EBPI.EncodingNo->dump(); else errs() << "none\n";
+
+    if (EBPI.ObjectSizePtr) {
+//      errs() << "  -> returning loaded value for objsizeptr\n";
       return IIRB.IRB.CreateLoad(IIRB.Int64Ty, EBPI.ObjectSizePtr);
+    }
+//    errs() << "  -> returning value for objsize\n";
     assert(EBPI.ObjectSize);
     return EBPI.ObjectSize;
   }
@@ -1821,6 +1850,8 @@ struct ExtendedGlobalIO : public GlobalIO {
       if (LSIConf.AIC->isObjectSafe(&V))
         return false;
       auto &GV = cast<GlobalVariable>(V);
+      if (GV.hasAttribute("no_sanitize_address"))
+        return false;
       return GV.getValueType()->isSized() && !GV.hasWeakLinkage() &&
              !GV.isInterposable();
     };
@@ -1940,6 +1971,16 @@ struct ExtendedBasePointerIO : public BasePointerIO {
   Value *instrument(Value *&V, InstrumentationConfig &IConf,
                     InstrumentorIRBuilderTy &IIRB,
                     InstrumentationCaches &ICaches) override {
+#if 0
+    errs() << "ExtendedBasePointerInfo::instrument() called for value:";
+    V->dump();
+
+    if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+      if (GV->getName() == "_ZZN3cub28DeviceReduceSingleTileKernelINS_18DeviceReducePolicyImiiN6thrust4plusIiEEE9Policy600EPmPiiS4_iEEvT0_T1_T2_T3_T4_E12temp_storage")
+        while (!ContinueDebug1);
+    }
+#endif
+
     LLVM_DEBUG({
       if (auto *I = dyn_cast<Instruction>(V)) {
         auto &LI = IIRB.analysisGetter<LoopAnalysis>(*I->getFunction());
@@ -1966,7 +2007,7 @@ struct ExtendedBasePointerIO : public BasePointerIO {
     if (!ObjSize)
       ObjSize = IIRB.IRB.CreateLoad(IIRB.Int64Ty, CI->getArgOperand(1));
 
-    auto &EBPI = LSIConf.BasePointerSizeOffsetMap[{VPtr, Fn}];
+    auto &EBPI = LSIConf.BasePointerSizeOffsetMap[{getUnderlyingObjectRecursive(VPtr), Fn}];
     EBPI.ObjectSize = ObjSize;
 #if 0
     // TODO: This needs to be enabled only if we do not hand out mptr once we run out of objects
@@ -3146,6 +3187,25 @@ PreservedAnalyses run(Module &M, AnalysisManager<Module> &MAM) {
 } // namespace
 
 PreservedAnalyses LightSanPass::run(Module &M, AnalysisManager<Module> &MAM) {
+  StringRef PhaseName = "unknown";
+  switch (Phase) {
+  case ThinOrFullLTOPhase::None:
+    PhaseName = "none";
+    break;
+  case ThinOrFullLTOPhase::ThinLTOPreLink:
+    PhaseName = "thin-lto-pre-link";
+    break;
+  case ThinOrFullLTOPhase::FullLTOPreLink:
+    PhaseName = "full-lto-pre-link";
+    break;
+  case ThinOrFullLTOPhase::ThinLTOPostLink:
+    PhaseName = "thin-lto-post-link";
+    break;
+  case ThinOrFullLTOPhase::FullLTOPostLink:
+    PhaseName = "full-lto-post-link";
+    break;
+  }
+
   bool IsGPU = isGPUTarget(M);
   if (ObjsanCPUOnly && IsGPU)
     return PreservedAnalyses::all();
@@ -3155,9 +3215,11 @@ PreservedAnalyses LightSanPass::run(Module &M, AnalysisManager<Module> &MAM) {
   static constexpr char ModuleFlag[] = "sanitize_obj";
   switch (Phase) {
   case ThinOrFullLTOPhase::None:
+    errs() << "running objsan (phase " << PhaseName << ", target " << M.getTargetTriple() << ")\n";
     return ::run(M, MAM);
   case ThinOrFullLTOPhase::ThinLTOPreLink:
   case ThinOrFullLTOPhase::FullLTOPreLink:
+    errs() << "running objsan (phase " << PhaseName << ", target " << M.getTargetTriple() << ")\n";
     M.addModuleFlag(llvm::Module::Max, ModuleFlag, 1);
     return PreservedAnalyses::all();
   case ThinOrFullLTOPhase::ThinLTOPostLink:

@@ -2,10 +2,11 @@
 #include <cstdio>
 
 __device__ void func(int *array, int size) {
-	array[1000] = 200;
+	array[10] = 200;
 }
 
 __global__ void kernel(int *array, int size) {
+	//__shared__ int tmparray[1000];
 	//printf("kernel: array[%d] %d\n", 0, array[0]);
 	//printf("kernel: array %p %d\n", array, size);
 	func(array, size);

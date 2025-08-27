@@ -1,0 +1,122 @@
+{
+  "Base": {
+    "RuntimeName": "__instrumentor_",
+    "PrintRuntimeSignatures": true,
+    "StubRuntimePath": "rt.c"
+  },
+  "alloca": {
+    "EnabledPost": true,
+    "Value": true,
+    "AllocationSize": true,
+    "Alignment": true,
+    "ReplaceValue": true
+  },
+  "store": {
+    "EnabledPre": true,
+    "PointerOperand": true,
+    "PointerOperandAddressSpace": true,
+    "ValueOperand": true,
+    "ValueOperandSize": true,
+    "ValueOperandTypeId": true,
+    "Alignment": true,
+    "AtomicityOrdering": true,
+    "SyncScopeId": true,
+    "IsVolatile": true,
+    "BasePointerInfo": true,
+    "ReplacePointerOperand": true,
+    "SkipSafeAccess": false
+  },
+  "load": {
+    "EnabledPre": true,
+    "EnabledPost": true,
+    "PointerOperand": true,
+    "PointerOperandAddressSpace": true,
+    "Value": true,
+    "ValueSize": true,
+    "ValueTypeId": true,
+    "Alignment": true,
+    "AtomicityOrdering": true,
+    "SyncScopeId": true,
+    "IsVolatile": true,
+    "BasePointerInfo": true,
+    "ReplacePointerOperand": true,
+    "ReplaceValue": true,
+    "SkipSafeAccess": false
+  },
+  "allocation_call": {
+    "EnabledPost": false,
+    "MemoryPointer": true,
+    "MemorySize": true,
+    "Alignment": true,
+    "Family": true,
+    "InitializerKind": true,
+    "ReplaceValue": true
+  },
+  "memory_intrinsic": {
+    "EnabledPre": true,
+    "EnabledPost": true,
+    "KindId": true,
+    "DestinationPointer": true,
+    "DestinationPointerAddressSpace": true,
+    "SourcePointer": true,
+    "SourcePointerAddressSpace": true,
+    "MemsetValue": true,
+    "Length": true,
+    "IsVolatile": true,
+    "AtomicElementSize": true,
+    "ReplaceValue": true
+  },
+  "intrinsic": {
+    "EnabledPre": true,
+    "KindId": true
+  },
+  "unreachable": {
+    "EnabledPre": true
+  },
+  "global_var": {
+    "EnabledPost": true,
+    "Value": true,
+    "Size": true,
+    "Alignment": true,
+    "IsConstant": true,
+    "UnnamedAddress": true,
+    "Name": true,
+    "InitializerKind": true,
+    "ReplaceValue": true,
+    "SkipDeclaration": false
+  },
+  "module": {
+    "EnabledPre": true,
+    "EnabledPost": true,
+    "ModuleName": true,
+    "ModuleTargetTriple": true
+  },
+  "main_function": {
+    "EnabledPre": true,
+    "EnabledPost": true,
+    "ArgC": true,
+    "ArgV": true,
+    "ReturnValue": true,
+    "ReplaceArgumentValues": true,
+    "ReplaceReturnValue": true
+  },
+  "call": {
+    "EnabledPre": false,
+    "EnabledPost": false,
+    "CalleePtr": true,
+    "CalleeName": true,
+    "Values": true,
+    "ValueSizes": true,
+    "ValueTypeIds": true,
+    "NumValues": true,
+    "ReplaceValues": true,
+    "SkipInstrumentedLocally": false,
+    "SkipInstrumentedExternally": false,
+    "OnlyReplacedPointerValues": false
+  },
+  "base_pointer": {
+    "EnabledPost": true,
+    "Value": true,
+    "SkipUnused": true
+  }
+}
