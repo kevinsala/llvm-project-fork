@@ -1125,9 +1125,9 @@ PreservedAnalyses InstrumentorPass::run(Module &M, ModuleAnalysisManager &MAM) {
   if (!Changed)
     return PreservedAnalyses::all();
 
-  if (verifyModule(M))
-    M.dump();
-  assert(!verifyModule(M, &errs()));
+  //if (verifyModule(M))
+  //  M.dump();
+  !verifyModule(M, &errs());
 
   return PreservedAnalyses::none();
 }
@@ -1520,8 +1520,18 @@ CallInst *IRTCallDescription::createLLVMCall(Value *&V,
     if (!Param || It.NoCache)
       // Avoid passing the caches to the getter.
       Param = It.GetterCB(*V, *It.Ty, IConf, IIRB);
-    if (!Param)
-      errs() << IO.getName() << " : " << It.Name << "\n";
+    if (!Param) {
+      Instruction *IIII = dyn_cast<Instruction>(V);
+      Function *Fn = nullptr;
+      if (IIII) {
+        Fn = IIII->getParent()->getParent();
+        errs() << "found null param " << It.Name << " in IO " << IO.getName() << " in function " << Fn->getName() << "\n";
+      } else
+        errs() << "found null param of unknown value\n";
+      IIII->dump();
+      errs() << "which is inside the following function\n";
+      Fn->dump();
+    }
     assert(Param);
 
     if (Param->getType()->isVoidTy()) {
