@@ -551,11 +551,13 @@ struct LightSanInstrumentationConfig : public InstrumentationConfig {
       // MPtr& is potentially dangling and potentially set.
       auto *&MPtr2 = V2M[{Ptr, Fn}];
       if (!MPtr2) {
+        auto *Ptr2 = tryToCast(IIRB.IRB, Ptr, IIRB.PtrTy, IIRB.DL);
         // Fallback to rt call.
-        auto *CI = IIRB.IRB.CreateCall(GetMPtrFC, {Ptr, BaseMPtr, EncNo});
-        IIRB.hoistInstructionsAndAdjustIP(*CI, BestIP, DT,
+        auto *CI = IIRB.IRB.CreateCall(GetMPtrFC, {Ptr2, BaseMPtr, EncNo});
+        auto *Ptr3 = tryToCast(IIRB.IRB, CI, Ptr->getType(), IIRB.DL);
+        IIRB.hoistInstructionsAndAdjustIP(cast<Instruction>(*Ptr3), BestIP, DT,
                                           /*ForceInitial=*/true);
-        MPtr2 = CI;
+        MPtr2 = Ptr3;
       }
     }
 
@@ -2092,6 +2094,8 @@ struct ExtendedBasePointerIO : public BasePointerIO {
 #endif
     EBPI.EncodingNo = IIRB.IRB.CreateLoad(IIRB.Int8Ty, CI->getArgOperand(2));
 
+    // KTODO: Is this actually needed?
+#if 0
     if (!MPtr)
       MPtr = IIRB.IRB.CreateCall(LSIConf.GetMPtrFC,
                                  {VPtr, BaseMPtr, EBPI.EncodingNo});
@@ -2100,6 +2104,7 @@ struct ExtendedBasePointerIO : public BasePointerIO {
     if (!MappedMPtr) {
       MappedMPtr = MPtr;
     }
+#endif
 
     return BaseMPtr;
   }
