@@ -22,15 +22,20 @@ __attribute__((visibility("default"))) StatsTy SLoopR("loopr");
 
 extern "C" {
 using CtorFn = void (*)(void);
-extern CtorFn __start___objsan_ctor;
-extern CtorFn __stop___objsan_ctor;
+extern CtorFn __objsan_start_ctor;
+extern CtorFn __objsan_stop_ctor;
 
+#ifndef __OBJSAN_DEVICE__
 __attribute__((constructor(1000))) void __objsan_ctor_init() {
-  //  fprintf(stderr, "CTOR INIT  %p %p, %lu\n", &__start___objsan_ctor,
-  //          &__stop___objsan_ctor,
-  //          &__stop___objsan_ctor - &__start___objsan_ctor);
-  for (CtorFn *Ctor = &__start___objsan_ctor, *E = &__stop___objsan_ctor;
+    fprintf(stderr, "CTOR INIT  %p %p, %lu\n", &__objsan_start_ctor,
+            &__objsan_stop_ctor,
+            &__objsan_stop_ctor - &__objsan_start_ctor);
+  for (CtorFn *Ctor = &__objsan_start_ctor, *E = &__objsan_stop_ctor;
+       Ctor != E; ++Ctor)
+    (*Ctor)();
+  for (CtorFn *Ctor = &__objsan_start_ctor, *E = &__objsan_stop_ctor;
        Ctor != E; ++Ctor)
     (*Ctor)();
 }
+#endif
 }
