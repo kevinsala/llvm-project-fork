@@ -81,4 +81,8 @@ FuncTy *getOriginalFunction(const char *Name) {
 
 } // namespace objsan
 
+constexpr const char *FailPrefix = "[preload-error]";
+constexpr const char *WarnPrefix = "[preload-warn]";
+constexpr const char *InfoPrefix = "[preload-info]";
+
 #endif
