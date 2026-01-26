@@ -55,18 +55,21 @@ static_assert(sizeof(int16_t) == 2, "int16_t size mismatch");
 static_assert(sizeof(int32_t) == 4, "int32_t size mismatch");
 static_assert(sizeof(int64_t) == 8, "uint64_t size mismatch");
 
+// FIXME: Disabled for now.
+//#define FPRINTF(...) printf(__VA_ARGS__)
+#define FPRINTF(...)
+#define FFLUSH(...)
+
 extern "C" {
 int printf(const char *format, ...);
 
 static inline void __assert_fail(const char *expr, const char *file,
                                  unsigned line, const char *function) {
-  printf("%s:%u: %s: Assertion `%s` failed.\n", file, line, function, expr);
+  // FIXME: Disabled for now.
+  FPRINTF("%s:%u: %s: Assertion `%s` failed.\n", file, line, function, expr);
   __builtin_trap();
 }
 }
-
-#define FPRINTF(...) printf(__VA_ARGS__)
-#define FFLUSH(...)
 
 #ifdef NDEBUG
 #define assert(expr) ((void)(0))
