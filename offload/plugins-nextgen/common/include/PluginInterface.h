@@ -34,13 +34,18 @@
 #include "MemoryManager.h"
 #include "OffloadError.h"
 #include "RPC.h"
+#include "RecordReplay.h"
 #include "omptarget.h"
 
 #ifdef OMPT_SUPPORT
 #include "omp-tools.h"
 #endif
 
+#include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StableHashing.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/Frontend/OpenMP/OMPGridValues.h"
 #include "llvm/Support/Allocator.h"
@@ -61,7 +66,6 @@ namespace plugin {
 struct GenericPluginTy;
 struct GenericKernelTy;
 struct GenericDeviceTy;
-struct RecordReplayTy;
 template <typename ResourceRef> class GenericDeviceResourceManagerTy;
 
 namespace Plugin {
@@ -372,7 +376,8 @@ struct GenericKernelTy {
   /// one used to initialize the kernel.
   Error launch(GenericDeviceTy &GenericDevice, void **ArgPtrs,
                ptrdiff_t *ArgOffsets, KernelArgsTy &KernelArgs,
-               AsyncInfoWrapperTy &AsyncInfoWrapper) const;
+               AsyncInfoWrapperTy &AsyncInfoWrapper,
+               RecordReplayTy::RRHandleTy *RRHandle = nullptr) const;
   virtual Error launchImpl(GenericDeviceTy &GenericDevice,
                            uint32_t NumThreads[3], uint32_t NumBlocks[3],
                            uint32_t DynBlockMemSize, KernelArgsTy &KernelArgs,
@@ -778,6 +783,17 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
   GenericDeviceTy(GenericPluginTy &Plugin, int32_t DeviceId, int32_t NumDevices,
                   const llvm::omp::GV &GridValues);
 
+  virtual Expected<void *> allocateWithVirtualAddress(uint64_t Size,
+                                                      void *VAddr = nullptr) {
+    return Plugin::error(error::ErrorCode::UNSUPPORTED,
+                         "allocate with virtual address not supported");
+  }
+
+  virtual Error deallocateWithVirtualAddress(void *Addr, uint64_t Size) {
+    return Plugin::error(error::ErrorCode::UNSUPPORTED,
+                         "allocate with virtual address not supported");
+  }
+
   /// Get the device identifier within the corresponding plugin. Notice that
   /// this id is not unique between different plugins; they may overlap.
   int32_t getDeviceId() const { return DeviceId; }
@@ -1156,6 +1172,29 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
     return ATI;
   }
 
+  Error initRecordReplay(int64_t Size, void *VAddr, bool IsRecord,
+                         bool IsNative, bool SaveOutput) {
+    if (RecordReplay)
+      return Plugin::error(error::ErrorCode::INVALID_ARGUMENT,
+                           "RR already initialized");
+    if (!IsRecord && !IsNative)
+      return Plugin::error(error::ErrorCode::UNSUPPORTED,
+                           "replay not available in non-native RR");
+
+    RecordReplayTy::RRStatusTy Status =
+        IsRecord ? RecordReplayTy::RRStatusTy::RRRecording
+                 : RecordReplayTy::RRStatusTy::RRReplaying;
+
+    if (IsNative)
+      RecordReplay = new NativeRecordReplayTy(Status, SaveOutput, *this);
+    else
+      RecordReplay = new MnemeRecordReplayTy(Status, SaveOutput, *this);
+
+    return RecordReplay->init(Size, VAddr);
+  }
+
+  RecordReplayTy *getRecordReplay() { return RecordReplay; }
+
   /// Map to record kernel have been launchedl, for error reporting purposes.
   ProtectedObj<KernelTraceInfoRecordTy> KernelLaunchTraces;
 
@@ -1217,6 +1256,9 @@ private:
 
   /// Indicate whether failures when locking mapped buffers should be ignored.
   bool IgnoreLockMappedFailures;
+
+  /// Record and replay manager.
+  RecordReplayTy *RecordReplay = nullptr;
 
 protected:
   /// Environment variables defined by the LLVM OpenMP implementation
@@ -1281,8 +1323,7 @@ struct GenericPluginTy {
 
   /// Construct a plugin instance.
   GenericPluginTy(Triple::ArchType TA)
-      : GlobalHandler(nullptr), JIT(TA), RPCServer(nullptr),
-        RecordReplay(nullptr) {}
+      : GlobalHandler(nullptr), JIT(TA), RPCServer(nullptr) {}
 
   virtual ~GenericPluginTy() {}
 
@@ -1374,11 +1415,6 @@ struct GenericPluginTy {
   virtual Error deinitRPCDoorbell() { return Plugin::success(); }
 
   /// Get a reference to the record and replay interface for the plugin.
-  RecordReplayTy &getRecordReplay() {
-    assert(RecordReplay && "RR interface not initialized");
-    return *RecordReplay;
-  }
-
   /// Initialize a device within the plugin.
   Error initDevice(int32_t DeviceId);
 
@@ -1471,8 +1507,8 @@ public:
 
   /// Initializes the record and replay mechanism inside the plugin.
   int32_t initialize_record_replay(int32_t DeviceId, int64_t MemorySize,
-                                   void *VAddr, bool isRecord, bool SaveOutput,
-                                   uint64_t &ReqPtrArgOffset);
+                                   void *VAddr, bool IsRecord, bool IsNative,
+                                   bool SaveOutput, uint64_t &ReqPtrArgOffset);
 
   /// Loads the associated binary into the plugin and returns a handle to it.
   int32_t load_binary(int32_t DeviceId, __tgt_device_image *TgtImage,
@@ -1648,9 +1684,6 @@ private:
 
   /// The interface between the plugin and the GPU for host services.
   RPCServerTy *RPCServer;
-
-  /// The interface between the plugin and the GPU for host services.
-  RecordReplayTy *RecordReplay;
 };
 
 /// Auxiliary interface class for GenericDeviceResourceManagerTy. This class

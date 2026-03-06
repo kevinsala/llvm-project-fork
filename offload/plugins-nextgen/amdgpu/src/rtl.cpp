@@ -290,7 +290,7 @@ struct AMDGPUMemoryPoolTy {
     if (auto Err = getAttr(HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS, GlobalFlags))
       return Err;
 
-    return Plugin::success();
+    return getAttr(HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_GRANULE, Granule);
   }
 
   /// Getter of the HSA memory pool.
@@ -319,6 +319,9 @@ struct AMDGPUMemoryPoolTy {
     assert(isGlobal() && "Not global memory");
     return (GlobalFlags & HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT);
   }
+
+  /// Get the page size.
+  size_t getGranule() const { return Granule; }
 
   /// Allocate memory on the memory pool.
   Error allocate(size_t Size, void **PtrStorage) {
@@ -400,6 +403,9 @@ private:
   /// The global flags of memory pool. Only valid if the memory pool belongs to
   /// the global segment.
   uint32_t GlobalFlags;
+
+  /// The page size in this memory pool.
+  size_t Granule;
 };
 
 /// Class that implements a memory manager that gets memory from a specific
@@ -2320,6 +2326,80 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
     return Plugin::success();
   }
 
+  /// Map of virtual memory handles for each allocation.
+  DenseMap<void *, hsa_amd_vmem_alloc_handle_t> VMemMap;
+  std::mutex VMemMutex;
+
+  Expected<void *> allocateWithVirtualAddress(uint64_t Size,
+                                              void *VAddr) override {
+    // Use a fixed address if not provided.
+    uint64_t ExpectedVAddr = 0x1534f7e00000ULL;
+    if (VAddr != nullptr)
+      ExpectedVAddr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(VAddr));
+
+    // Must be multiple of the page size.
+    auto *Pool = CoarseGrainedMemoryPools[0];
+    uint64_t AlignedSize = utils::roundUp(Size, (uint64_t)Pool->getGranule());
+
+    hsa_status_t Status =
+        hsa_amd_vmem_address_reserve(&VAddr, AlignedSize, ExpectedVAddr, 0);
+    if (auto Err = Plugin::check(Status,
+                                 "error in hsa_amd_vmem_address_reserve: %s\n"))
+      return Err;
+
+    hsa_amd_vmem_alloc_handle_t VMemHandle;
+    Status = hsa_amd_vmem_handle_create(Pool->get(), AlignedSize,
+                                        MEMORY_TYPE_PINNED, 0, &VMemHandle);
+    if (auto Err =
+            Plugin::check(Status, "error in hsa_amd_vmem_handle_create: %s\n"))
+      return Err;
+
+    Status = hsa_amd_vmem_map(VAddr, AlignedSize, 0, VMemHandle, 0);
+    if (auto Err = Plugin::check(Status, "error in hsa_amd_vmem_map: %s\n"))
+      return Err;
+
+    hsa_amd_memory_access_desc_t Desc;
+    Desc.agent_handle = Agent;
+    Desc.permissions = HSA_ACCESS_PERMISSION_RW;
+    Status = hsa_amd_vmem_set_access(VAddr, AlignedSize, &Desc, 1);
+    if (auto Err =
+            Plugin::check(Status, "error in hsa_amd_vmem_set_access: %s\n"))
+      return Err;
+
+    std::lock_guard<std::mutex> Lock(VMemMutex);
+    VMemMap[VAddr] = VMemHandle;
+    return VAddr;
+  }
+
+  Error deallocateWithVirtualAddress(void *Addr, uint64_t Size) override {
+    auto *Pool = CoarseGrainedMemoryPools[0];
+    uint64_t AlignedSize = utils::roundUp(Size, (uint64_t)Pool->getGranule());
+
+    hsa_amd_vmem_alloc_handle_t Handle;
+    {
+      std::lock_guard<std::mutex> Lock(VMemMutex);
+      auto It = VMemMap.find(Addr);
+      if (It == VMemMap.end())
+        return Plugin::error(ErrorCode::INVALID_ARGUMENT,
+                             "virtual address not reserved");
+
+      Handle = It->second;
+      VMemMap.erase(It);
+    }
+
+    hsa_status_t Status = hsa_amd_vmem_unmap(Addr, AlignedSize);
+    if (auto Err = Plugin::check(Status, "error in hsa_amd_vmem_unmap: %s\n"))
+      return Err;
+
+    Status = hsa_amd_vmem_handle_release(Handle);
+    if (auto Err =
+            Plugin::check(Status, "error in hsa_amd_vmem_handle_release: %s\n"))
+      return Err;
+
+    Status = hsa_amd_vmem_address_free(Addr, AlignedSize);
+    return Plugin::check(Status, "error in hsa_amd_vmem_address_free: %s\n");
+  }
+
   Error unloadBinaryImpl(DeviceImageTy *Image) override {
     AMDGPUDeviceImageTy &AMDImage = static_cast<AMDGPUDeviceImageTy &>(*Image);
 
@@ -3204,10 +3284,7 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
       if (Status == HSA_STATUS_SUCCESS)
         PoolNode.add("Allocatable", TmpBool);
 
-      Status = Pool->getAttrRaw(HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_GRANULE,
-                                TmpSt);
-      if (Status == HSA_STATUS_SUCCESS)
-        PoolNode.add("Runtime Alloc Granule", TmpSt, "bytes");
+      PoolNode.add("Runtime Alloc Granule", Pool->getGranule(), "bytes");
 
       Status = Pool->getAttrRaw(
           HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALIGNMENT, TmpSt);
