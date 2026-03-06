@@ -94,8 +94,9 @@ int main(int argc, char **argv) {
   void *BAllocStart = reinterpret_cast<void *>(
       JsonKernelInfo->getAsObject()->getInteger("BumpAllocVAStart").value());
 
-  llvm::offloading::EntryTy KernelEntry = {~0U,     0, 0, 0,      nullptr,
-                                           nullptr, 0, 0, nullptr};
+  llvm::offloading::EntryTy KernelEntry = {
+      0x0, 0x1,    object::OffloadKind::OFK_OpenMP, 0, nullptr, nullptr, 0,
+      0,   nullptr};
   std::string KernelEntryName = KernelFunc.value().str();
   KernelEntry.SymbolName = const_cast<char *>(KernelEntryName.c_str());
   // Anything non-zero works to uniquely identify the kernel.
@@ -150,8 +151,8 @@ int main(int argc, char **argv) {
 
   // On AMD for currently unknown reasons we cannot copy memory mapped data to
   // device. This is a work-around.
-  uint8_t *recored_data = new uint8_t[DeviceMemoryMB.get()->getBufferSize()];
-  std::memcpy(recored_data,
+  uint8_t *RecordedData = new uint8_t[DeviceMemoryMB.get()->getBufferSize()];
+  std::memcpy(RecordedData,
               const_cast<char *>(DeviceMemoryMB.get()->getBuffer().data()),
               DeviceMemoryMB.get()->getBufferSize());
 
@@ -168,7 +169,7 @@ int main(int argc, char **argv) {
   }
 
   __tgt_target_kernel_replay(
-      /*Loc=*/nullptr, DeviceId, KernelEntry.Address, (char *)recored_data,
+      /*Loc=*/nullptr, DeviceId, KernelEntry.Address, (char *)RecordedData,
       DeviceMemoryMB.get()->getBufferSize(), TgtArgs.data(),
       TgtArgOffsets.data(), NumArgs.value(), NumTeams, NumThreads,
       LoopTripCount.value());
@@ -198,7 +199,7 @@ int main(int argc, char **argv) {
                 "verify!\n";
   }
 
-  delete[] recored_data;
+  delete[] RecordedData;
 
   return 0;
 }
