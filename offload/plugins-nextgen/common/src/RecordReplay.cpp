@@ -11,8 +11,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstdint>
-#include <functional>
 #include <filesystem>
+#include <functional>
 
 using namespace llvm;
 using namespace omp;
@@ -20,7 +20,8 @@ using namespace target;
 using namespace plugin;
 using namespace error;
 
-Error NativeRecordReplayTy::recordImage(const GenericKernelTy &Kernel, StringRef Filename) {
+Error NativeRecordReplayTy::recordImage(const GenericKernelTy &Kernel,
+                                        StringRef Filename) {
   std::error_code EC;
   raw_fd_ostream OS(Filename, EC);
   if (EC)
@@ -37,14 +38,15 @@ Error NativeRecordReplayTy::recordGlobals(StringRef Filename) {
     if (!OffloadEntry.Size)
       continue;
     // Get the total size of the string and entry including the null byte.
-    Size += OffloadEntry.Name.length() + 1 + sizeof(uint32_t) +
-            OffloadEntry.Size;
+    Size +=
+        OffloadEntry.Name.length() + 1 + sizeof(uint32_t) + OffloadEntry.Size;
   }
 
   ErrorOr<std::unique_ptr<WritableMemoryBuffer>> GlobalsMB =
       WritableMemoryBuffer::getNewUninitMemBuffer(Size);
   if (!GlobalsMB)
-    return Plugin::error(ErrorCode::UNKNOWN, "creating MemoryBuffer for globals memory");
+    return Plugin::error(ErrorCode::UNKNOWN,
+                         "creating MemoryBuffer for globals memory");
 
   void *BufferPtr = GlobalsMB.get()->getBufferStart();
   for (auto &OffloadEntry : GlobalEntries) {
@@ -59,14 +61,14 @@ Error NativeRecordReplayTy::recordGlobals(StringRef Filename) {
     BufferPtr = utils::advancePtr(BufferPtr, sizeof(uint32_t));
 
     if (auto Err = RRDevice.dataRetrieve(BufferPtr, OffloadEntry.Addr,
-                                          OffloadEntry.Size, nullptr))
+                                         OffloadEntry.Size, nullptr))
       return Err;
     BufferPtr = utils::advancePtr(BufferPtr, OffloadEntry.Size);
   }
   assert(BufferPtr == GlobalsMB->get()->getBufferEnd() &&
          "Buffer over/under-filled.");
-  assert(Size == utils::getPtrDiff(BufferPtr,
-                                   GlobalsMB->get()->getBufferStart()) &&
+  assert(Size ==
+             utils::getPtrDiff(BufferPtr, GlobalsMB->get()->getBufferStart()) &&
          "Buffer size mismatch");
 
   StringRef GlobalsMemory(GlobalsMB.get()->getBufferStart(), Size);
@@ -77,18 +79,25 @@ Error NativeRecordReplayTy::recordGlobals(StringRef Filename) {
   return Plugin::success();
 }
 
-Error MnemeRecordReplayTy::recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) {
-  std::string Filename = getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/true);
+Error MnemeRecordReplayTy::recordPrologue(
+    const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams,
+    const KernelLaunchParamsTy &LaunchParams) {
+  std::string Filename =
+      getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/true);
   return recordSnapshot(Filename, Kernel.getImage(), NumParams, LaunchParams);
 }
 
-Error MnemeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel, RRHandleTy Handle) {
+Error MnemeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel,
+                                          RRHandleTy Handle) {
   KernelLaunchParamsTy LaunchParams{0, nullptr, nullptr};
-  std::string Filename = getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/false);
+  std::string Filename =
+      getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/false);
   return recordSnapshot(Filename, Kernel.getImage(), 0, LaunchParams);
 }
 
-Error MnemeRecordReplayTy::recordSnapshot(StringRef Filename, DeviceImageTy &Image, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) {
+Error MnemeRecordReplayTy::recordSnapshot(
+    StringRef Filename, DeviceImageTy &Image, uint32_t NumParams,
+    const KernelLaunchParamsTy &LaunchParams) {
   std::error_code EC;
   raw_fd_ostream OS(Filename, EC);
   if (EC)
@@ -121,7 +130,8 @@ Error MnemeRecordReplayTy::recordSnapshot(StringRef Filename, DeviceImageTy &Ima
   }
 
   size_t TotalBlobs = 1;
-  OS << StringRef(reinterpret_cast<const char *>(&TotalBlobs), sizeof(TotalBlobs));
+  OS << StringRef(reinterpret_cast<const char *>(&TotalBlobs),
+                  sizeof(TotalBlobs));
 
   // Write device memory.
   OS << llvm::StringRef(reinterpret_cast<const char *>(&RRTotalSize),
@@ -149,17 +159,20 @@ Error MnemeRecordReplayTy::recordSnapshot(StringRef Filename, DeviceImageTy &Ima
 
   for (size_t I = 0; I < NumArgs; I++) {
     size_t ArgSize = sizeof(void *);
-    OS << StringRef(
-        reinterpret_cast<const char *>(&ArgSize), sizeof(ArgSize));
-    OS << StringRef(reinterpret_cast<const char *>(LaunchParams.Ptrs[I]), ArgSize);
+    OS << StringRef(reinterpret_cast<const char *>(&ArgSize), sizeof(ArgSize));
+    OS << StringRef(reinterpret_cast<const char *>(LaunchParams.Ptrs[I]),
+                    ArgSize);
   }
   OS.close();
   return Plugin::success();
 }
 
-Error MnemeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle, KernelLaunchParamsTy LaunchParams,
-                                                int32_t NumArgs, uint64_t NumTeams,
-                                                uint32_t NumThreads, uint64_t LoopTripCount) {
+Error MnemeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel,
+                                            RRHandleTy Handle,
+                                            KernelLaunchParamsTy LaunchParams,
+                                            int32_t NumArgs, uint64_t NumTeams,
+                                            uint32_t NumThreads,
+                                            uint64_t LoopTripCount) {
   std::ostringstream StartSt;
   StartSt << RRStartAddr;
 
@@ -180,13 +193,18 @@ Error MnemeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel, RRHan
     JsonSpecializations.push_back(false);
   }
   JsonKernelInfo["ArgNames"] = json::Value(std::move(JsonArgNames));
-  JsonKernelInfo["Specializations"] = json::Value(std::move(JsonSpecializations));
+  JsonKernelInfo["Specializations"] =
+      json::Value(std::move(JsonSpecializations));
 
   json::Object JsonInstances;
   json::Object JsonInstance;
   JsonInstance["Args"] = json::Value(json::Array());
-  JsonInstance["Prologue"] = (CurrentPath / getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/true)).string();
-  JsonInstance["Epilogue"] = (CurrentPath / getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/false)).string();
+  JsonInstance["Prologue"] =
+      (CurrentPath / getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/true))
+          .string();
+  JsonInstance["Epilogue"] =
+      (CurrentPath / getSnapshotFilename(Kernel, Handle, /*IsPrologue=*/false))
+          .string();
   JsonInstance["SharedMem"] = 0;
   JsonInstance["Occurrences"] = 1;
 
@@ -202,10 +220,12 @@ Error MnemeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel, RRHan
   JsonBlock["z"] = 1;
   JsonInstance["BlockDims"] = json::Value(std::move(JsonBlock));
 
-  JsonInstances[std::to_string(Handle.LaunchConfigHash)] = json::Value(std::move(JsonInstance));
+  JsonInstances[std::to_string(Handle.LaunchConfigHash)] =
+      json::Value(std::move(JsonInstance));
   JsonKernelInfo["instances"] = json::Value(std::move(JsonInstances));
 
-  SmallString<128> JsonFilename = {std::to_string(Handle.KernelHash).c_str(), ".json"};
+  SmallString<128> JsonFilename = {std::to_string(Handle.KernelHash).c_str(),
+                                   ".json"};
   std::error_code EC;
   raw_fd_ostream JsonOS(JsonFilename.data(), EC);
   if (EC)
@@ -216,11 +236,13 @@ Error MnemeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel, RRHan
   return Plugin::success();
 }
 
-std::string MnemeRecordReplayTy::getSnapshotFilename(const GenericKernelTy &Kernel, RRHandleTy Handle, bool IsPrologue) {
+std::string
+MnemeRecordReplayTy::getSnapshotFilename(const GenericKernelTy &Kernel,
+                                         RRHandleTy Handle, bool IsPrologue) {
   std::ostringstream FilenameSt;
-  FilenameSt << "DeviceState." << (IsPrologue ? "prologue" : "epilogue")
-      << "." << std::to_string(Handle.KernelHash) << "."
-      << std::to_string(Handle.LaunchConfigHash) << ".mneme";
+  FilenameSt << "DeviceState." << (IsPrologue ? "prologue" : "epilogue") << "."
+             << std::to_string(Handle.KernelHash) << "."
+             << std::to_string(Handle.LaunchConfigHash) << ".mneme";
   return FilenameSt.str();
 }
 
@@ -249,7 +271,8 @@ Error RecordReplayTy::init(uint64_t MemSize, void *VAddr) {
   INFO(OMP_INFOTYPE_PLUGIN_KERNEL, RRDevice.getDeviceId(),
        "Record initialized with starting address %p, "
        "memory size %lu bytes and status %s\n",
-       RRStartAddr, RRTotalSize, RRStatus == RRStatusTy::RRRecording ? "recording" : "replaying");
+       RRStartAddr, RRTotalSize,
+       RRStatus == RRStatusTy::RRRecording ? "recording" : "replaying");
 
   return Plugin::success();
 }
@@ -260,18 +283,25 @@ Error RecordReplayTy::deinit() {
   return Plugin::success();
 }
 
-RecordReplayTy::RRHandleTy RecordReplayTy::createHandle(const GenericKernelTy &Kernel, uint64_t NumTeams, uint32_t NumThreads, uint32_t SharedMemorySize) {
+RecordReplayTy::RRHandleTy
+RecordReplayTy::createHandle(const GenericKernelTy &Kernel, uint64_t NumTeams,
+                             uint32_t NumThreads, uint32_t SharedMemorySize) {
   size_t KernelHash = stable_hash_name(StringRef(Kernel.getName()));
-  size_t LaunchConfigHash = stable_hash_combine((stable_hash)NumTeams, (stable_hash)NumThreads, (stable_hash)SharedMemorySize);
-  return { KernelHash, LaunchConfigHash };
+  size_t LaunchConfigHash =
+      stable_hash_combine((stable_hash)NumTeams, (stable_hash)NumThreads,
+                          (stable_hash)SharedMemorySize);
+  return {KernelHash, LaunchConfigHash};
 }
 
-Error NativeRecordReplayTy::recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) {
+Error NativeRecordReplayTy::recordPrologue(
+    const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams,
+    const KernelLaunchParamsTy &LaunchParams) {
   SmallString<128> SnapshotFilename = {Kernel.getName(), ".memory"};
   return recordSnapshot(SnapshotFilename);
 }
 
-Error NativeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel, RRHandleTy Handle) {
+Error NativeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel,
+                                           RRHandleTy Handle) {
   SmallString<128> GlobalsFilename = {Kernel.getName(), ".globals"};
   if (auto Err = recordGlobals(GlobalsFilename))
     return Err;
@@ -280,13 +310,18 @@ Error NativeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel, RRHand
   if (auto Err = recordImage(Kernel, ImageFilename))
     return Err;
 
-  SmallString<128> SnapshotFilename = {Kernel.getName(), (isRecording() ? ".original.output" : ".replay.output")};
+  SmallString<128> SnapshotFilename = {
+      Kernel.getName(),
+      (isRecording() ? ".original.output" : ".replay.output")};
   return recordSnapshot(SnapshotFilename);
 }
 
-Error NativeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle, KernelLaunchParamsTy LaunchParams,
-                                                 int32_t NumArgs, uint64_t NumTeams,
-                                                 uint32_t NumThreads, uint64_t LoopTripCount) {
+Error NativeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel,
+                                             RRHandleTy Handle,
+                                             KernelLaunchParamsTy LaunchParams,
+                                             int32_t NumArgs, uint64_t NumTeams,
+                                             uint32_t NumThreads,
+                                             uint64_t LoopTripCount) {
   json::Object JsonKernelInfo;
   JsonKernelInfo["Name"] = Kernel.getName();
   JsonKernelInfo["NumArgs"] = NumArgs;
@@ -321,7 +356,8 @@ Error NativeRecordReplayTy::recordSnapshot(StringRef Filename) {
   ErrorOr<std::unique_ptr<WritableMemoryBuffer>> DeviceMemoryMB =
       WritableMemoryBuffer::getNewUninitMemBuffer(RRSize);
   if (!DeviceMemoryMB)
-    return Plugin::error(ErrorCode::UNKNOWN, "creating MemoryBuffer for device memory");
+    return Plugin::error(ErrorCode::UNKNOWN,
+                         "creating MemoryBuffer for device memory");
 
   if (auto Err = RRDevice.dataRetrieve(DeviceMemoryMB.get()->getBufferStart(),
                                        RRStartAddr, RRSize, nullptr))
