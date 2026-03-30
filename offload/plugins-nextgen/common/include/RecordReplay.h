@@ -21,13 +21,13 @@
 
 #include "OffloadError.h"
 
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StableHashing.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/Hashing.h"
 
 namespace llvm {
 namespace omp {
@@ -69,8 +69,8 @@ protected:
   llvm::SmallVector<GlobalEntry> GlobalEntries;
 
 public:
-  RecordReplayTy(RRStatusTy Status, bool SaveOutput, GenericDeviceTy &Device) :
-    RRStatus(Status), RRSaveOutput(SaveOutput), RRDevice(Device) {}
+  RecordReplayTy(RRStatusTy Status, bool SaveOutput, GenericDeviceTy &Device)
+      : RRStatus(Status), RRSaveOutput(SaveOutput), RRDevice(Device) {}
 
   virtual ~RecordReplayTy() = default;
 
@@ -79,50 +79,73 @@ public:
   bool isReplaying() const { return RRStatus == RRStatusTy::RRReplaying; }
   bool isRecordingOrReplaying() const { return isRecording() || isReplaying(); }
   bool shouldRecordPrologue() const { return isRecording(); }
-  bool shouldRecordEpilogue() const { return isRecordingOrReplaying() && RRSaveOutput; }
+  bool shouldRecordEpilogue() const {
+    return isRecordingOrReplaying() && RRSaveOutput;
+  }
   void addEntry(const char *Name, uint64_t Size, void *Addr) {
     GlobalEntries.emplace_back(GlobalEntry{Name, Size, Addr});
   }
 
-  virtual Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) = 0;
-  virtual Error recordEpilogue(const GenericKernelTy &Kernel, RRHandleTy Handle) = 0;
-  virtual Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle, KernelLaunchParamsTy LaunchParams,
-                                            int32_t NumArgs, uint64_t NumTeams,
-                                            uint32_t NumThreads, uint64_t LoopTripCount) = 0;
+  virtual Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
+                               uint32_t NumParams,
+                               const KernelLaunchParamsTy &LaunchParams) = 0;
+  virtual Error recordEpilogue(const GenericKernelTy &Kernel,
+                               RRHandleTy Handle) = 0;
+  virtual Error recordDescriptor(const GenericKernelTy &Kernel,
+                                 RRHandleTy Handle,
+                                 KernelLaunchParamsTy LaunchParams,
+                                 int32_t NumArgs, uint64_t NumTeams,
+                                 uint32_t NumThreads,
+                                 uint64_t LoopTripCount) = 0;
 
   void *alloc(uint64_t Size);
 
   Error init(uint64_t MemSize, void *VAddr);
   Error deinit();
 
-  static RRHandleTy createHandle(const GenericKernelTy &Kernel, uint64_t NumTeams, uint32_t NumThreads, uint32_t SharedMemorySize);
+  static RRHandleTy createHandle(const GenericKernelTy &Kernel,
+                                 uint64_t NumTeams, uint32_t NumThreads,
+                                 uint32_t SharedMemorySize);
 };
 
 struct MnemeRecordReplayTy : public RecordReplayTy {
-  MnemeRecordReplayTy(RRStatusTy Status, bool SaveOutput, GenericDeviceTy &Device) :
-    RecordReplayTy(Status, SaveOutput, Device) {}
+  MnemeRecordReplayTy(RRStatusTy Status, bool SaveOutput,
+                      GenericDeviceTy &Device)
+      : RecordReplayTy(Status, SaveOutput, Device) {}
 
-  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) override;
-  Error recordEpilogue(const GenericKernelTy &Kernel, RRHandleTy Handle) override;
-  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle, KernelLaunchParamsTy LaunchParams,
-                                          int32_t NumArgs, uint64_t NumTeams,
-                                          uint32_t NumThreads, uint64_t LoopTripCount) override;
+  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
+                       uint32_t NumParams,
+                       const KernelLaunchParamsTy &LaunchParams) override;
+  Error recordEpilogue(const GenericKernelTy &Kernel,
+                       RRHandleTy Handle) override;
+  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle,
+                         KernelLaunchParamsTy LaunchParams, int32_t NumArgs,
+                         uint64_t NumTeams, uint32_t NumThreads,
+                         uint64_t LoopTripCount) override;
 
 private:
-  Error recordSnapshot(StringRef Filename, DeviceImageTy &Image, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams);
+  Error recordSnapshot(StringRef Filename, DeviceImageTy &Image,
+                       uint32_t NumParams,
+                       const KernelLaunchParamsTy &LaunchParams);
 
-  static std::string getSnapshotFilename(const GenericKernelTy &Kernel, RRHandleTy Handle, bool IsPrologue);
+  static std::string getSnapshotFilename(const GenericKernelTy &Kernel,
+                                         RRHandleTy Handle, bool IsPrologue);
 };
 
 struct NativeRecordReplayTy : public RecordReplayTy {
-  NativeRecordReplayTy(RRStatusTy Status, bool SaveOutput, GenericDeviceTy &Device) :
-    RecordReplayTy(Status, SaveOutput, Device) {}
+  NativeRecordReplayTy(RRStatusTy Status, bool SaveOutput,
+                       GenericDeviceTy &Device)
+      : RecordReplayTy(Status, SaveOutput, Device) {}
 
-  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle, uint32_t NumParams, const KernelLaunchParamsTy &LaunchParams) override;
-  Error recordEpilogue(const GenericKernelTy &Kernel, RRHandleTy Handle) override;
-  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle, KernelLaunchParamsTy LaunchParams,
-                             int32_t NumArgs, uint64_t NumTeams,
-                             uint32_t NumThreads, uint64_t LoopTripCount) override;
+  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
+                       uint32_t NumParams,
+                       const KernelLaunchParamsTy &LaunchParams) override;
+  Error recordEpilogue(const GenericKernelTy &Kernel,
+                       RRHandleTy Handle) override;
+  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle,
+                         KernelLaunchParamsTy LaunchParams, int32_t NumArgs,
+                         uint64_t NumTeams, uint32_t NumThreads,
+                         uint64_t LoopTripCount) override;
 
 private:
   Error recordSnapshot(StringRef Filename);
