@@ -2431,7 +2431,11 @@ int target_replay(ident_t *Loc, DeviceTy &Device, void *HostPtr,
   KernelArgs.NumArgs = NumArgs;
   KernelArgs.Tripcount = LoopTripCount;
   KernelArgs.NumTeams[0] = NumTeams;
+  KernelArgs.NumTeams[1] = 1;
+  KernelArgs.NumTeams[2] = 1;
   KernelArgs.ThreadLimit[0] = ThreadLimit;
+  KernelArgs.ThreadLimit[1] = 1;
+  KernelArgs.ThreadLimit[2] = 1;
 
   int Ret = Device.launchKernel(TgtEntryPtr, TgtArgs, TgtOffsets, KernelArgs,
                                 AsyncInfo);
