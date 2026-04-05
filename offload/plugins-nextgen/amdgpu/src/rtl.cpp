@@ -2219,68 +2219,74 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
     return Plugin::success();
   }
 
-  /// Map of virtual memory handles for each allocation.
-  DenseMap<void *, hsa_amd_vmem_alloc_handle_t> VMemMap;
-  std::mutex VMemMutex;
+  /// Suggest a virtual address for device memory mapping.
+  virtual void *getSuggestedVirtualAddress() {
+    return reinterpret_cast<void *>(0x1534f7e00000ULL);
+  }
 
+  /// Allocate \p Size bytes on the device and hints the backend to map it to
+  /// virtual address \p VAddr. The function returns the allocated virtual
+  /// address. The memory must be deallocated through
+  /// GenericDeviceTy::deallocateWithVirtualAddress().
   Expected<void *> allocateWithVirtualAddress(uint64_t Size,
                                               void *VAddr) override {
-    // Use a fixed address if not provided.
-    uint64_t ExpectedVAddr = 0x1534f7e00000ULL;
+    uint64_t ExpectedVAddr = 0;
     if (VAddr != nullptr)
       ExpectedVAddr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(VAddr));
 
-    // Must be multiple of the page size.
+    // Transparently round up to a multiple of the page size.
     auto *Pool = CoarseGrainedMemoryPools[0];
-    uint64_t AlignedSize = utils::roundUp(Size, (uint64_t)Pool->getGranule());
+    Size = utils::roundUp(Size, (uint64_t)Pool->getGranule());
 
+    // Reserve the virtual address range.
     hsa_status_t Status =
-        hsa_amd_vmem_address_reserve(&VAddr, AlignedSize, ExpectedVAddr, 0);
+        hsa_amd_vmem_address_reserve(&VAddr, Size, ExpectedVAddr, 0);
     if (auto Err = Plugin::check(Status,
                                  "error in hsa_amd_vmem_address_reserve: %s\n"))
       return Err;
 
-    hsa_amd_vmem_alloc_handle_t VMemHandle;
-    Status = hsa_amd_vmem_handle_create(Pool->get(), AlignedSize,
-                                        MEMORY_TYPE_PINNED, 0, &VMemHandle);
+    // Create a handle of the allocation.
+    hsa_amd_vmem_alloc_handle_t Handle;
+    Status = hsa_amd_vmem_handle_create(Pool->get(), Size, MEMORY_TYPE_PINNED,
+                                        0, &Handle);
     if (auto Err =
             Plugin::check(Status, "error in hsa_amd_vmem_handle_create: %s\n"))
       return Err;
 
-    Status = hsa_amd_vmem_map(VAddr, AlignedSize, 0, VMemHandle, 0);
+    // Map the virtual address range to the memory allocation.
+    Status = hsa_amd_vmem_map(VAddr, Size, 0, Handle, 0);
     if (auto Err = Plugin::check(Status, "error in hsa_amd_vmem_map: %s\n"))
       return Err;
 
+    // Set the memory access properties for the allocation.
     hsa_amd_memory_access_desc_t Desc;
     Desc.agent_handle = Agent;
     Desc.permissions = HSA_ACCESS_PERMISSION_RW;
-    Status = hsa_amd_vmem_set_access(VAddr, AlignedSize, &Desc, 1);
+    Status = hsa_amd_vmem_set_access(VAddr, Size, &Desc, 1);
     if (auto Err =
             Plugin::check(Status, "error in hsa_amd_vmem_set_access: %s\n"))
       return Err;
 
-    std::lock_guard<std::mutex> Lock(VMemMutex);
-    VMemMap[VAddr] = VMemHandle;
+    // Register the virtual address range in the tracker.
+    if (auto Err = VMemTracker.registerReservation(VAddr, Size, Handle))
+      return Err;
+
     return VAddr;
   }
 
-  Error deallocateWithVirtualAddress(void *Addr, uint64_t Size) override {
-    auto *Pool = CoarseGrainedMemoryPools[0];
-    uint64_t AlignedSize = utils::roundUp(Size, (uint64_t)Pool->getGranule());
+  /// Deallocate device memory \p VAddr, which was allocated through
+  /// GenericDeviceTy::allocateWithVirtualAddress(), and unmap the virtual
+  /// address range.
+  Error deallocateWithVirtualAddress(void *VAddr, uint64_t) override {
+    // Unregister the virtual address range and obtain the information about
+    // the reservation.
+    auto InfoOrErr = VMemTracker.unregisterReservation(VAddr);
+    if (!InfoOrErr)
+      return InfoOrErr.takeError();
 
-    hsa_amd_vmem_alloc_handle_t Handle;
-    {
-      std::lock_guard<std::mutex> Lock(VMemMutex);
-      auto It = VMemMap.find(Addr);
-      if (It == VMemMap.end())
-        return Plugin::error(ErrorCode::INVALID_ARGUMENT,
-                             "virtual address not reserved");
+    auto [Size, Handle] = *InfoOrErr;
 
-      Handle = It->second;
-      VMemMap.erase(It);
-    }
-
-    hsa_status_t Status = hsa_amd_vmem_unmap(Addr, AlignedSize);
+    hsa_status_t Status = hsa_amd_vmem_unmap(VAddr, Size);
     if (auto Err = Plugin::check(Status, "error in hsa_amd_vmem_unmap: %s\n"))
       return Err;
 
@@ -2289,7 +2295,7 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
             Plugin::check(Status, "error in hsa_amd_vmem_handle_release: %s\n"))
       return Err;
 
-    Status = hsa_amd_vmem_address_free(Addr, AlignedSize);
+    Status = hsa_amd_vmem_address_free(VAddr, Size);
     return Plugin::check(Status, "error in hsa_amd_vmem_address_free: %s\n");
   }
 
@@ -3443,6 +3449,9 @@ private:
   /// True is the system is configured with XNACK-Enabled.
   /// False otherwise.
   bool IsXnackEnabled = false;
+
+  /// Tracker for virtual address reservations.
+  VMemTrackerTy<hsa_amd_vmem_alloc_handle_t> VMemTracker;
 };
 
 Error AMDGPUDeviceImageTy::loadExecutable(const AMDGPUDeviceTy &Device) {

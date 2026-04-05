@@ -317,6 +317,45 @@ struct DynBlockMemConfTy {
   void *FallbackPtr = nullptr;
 };
 
+/// Tracker of virtual memory address reservations.
+template <typename HandleTy> class VMemTrackerTy {
+  struct EntryTy {
+    uint64_t Size;
+    HandleTy Handle;
+  };
+
+  /// Map of virtual memory address reservations.
+  DenseMap<void *, EntryTy> VMemMap;
+
+  /// Mutex for safe access to the map.
+  std::mutex Mutex;
+
+public:
+  /// Register a new virtual address reservation.
+  Error registerReservation(void *VAddr, uint64_t Size, HandleTy Handle) {
+    std::lock_guard<std::mutex> Lock(Mutex);
+    auto It = VMemMap.find(VAddr);
+    if (It != VMemMap.end())
+      return Plugin::error(error::ErrorCode::INVALID_ARGUMENT,
+                           "virtual address already reserved");
+    VMemMap[VAddr] = {Size, Handle};
+    return Plugin::success();
+  }
+
+  /// Unregister a virtual address reservation and return its information.
+  Expected<std::pair<uint64_t, HandleTy>> unregisterReservation(void *VAddr) {
+    std::lock_guard<std::mutex> Lock(Mutex);
+    auto It = VMemMap.find(VAddr);
+    if (It == VMemMap.end())
+      return Plugin::error(error::ErrorCode::INVALID_ARGUMENT,
+                           "virtual address not reserved");
+    uint64_t Size = It->second.Size;
+    HandleTy Handle = It->second.Handle;
+    VMemMap.erase(It);
+    return std::make_pair(Size, Handle);
+  }
+};
+
 /// Class wrapping a __tgt_device_image and its offload entry table on a
 /// specific device. This class is responsible for storing and managing
 /// the offload entries for an image on a device.
@@ -782,13 +821,23 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
   GenericDeviceTy(GenericPluginTy &Plugin, int32_t DeviceId, int32_t NumDevices,
                   const llvm::omp::GV &GridValues);
 
+  /// Suggest a virtual address for device memory mapping.
+  virtual void *getSuggestedVirtualAddress() { return nullptr; }
+
+  /// Allocate \p Size bytes on the device and hints the backend to map it to
+  /// virtual address \p VAddr. The function returns the allocated virtual
+  /// address. The memory must be deallocated through
+  /// GenericDeviceTy::deallocateWithVirtualAddress().
   virtual Expected<void *> allocateWithVirtualAddress(uint64_t Size,
                                                       void *VAddr = nullptr) {
     return Plugin::error(error::ErrorCode::UNSUPPORTED,
                          "allocate with virtual address not supported");
   }
 
-  virtual Error deallocateWithVirtualAddress(void *Addr, uint64_t Size) {
+  /// Deallocate device memory \p VAddr, which was allocated through
+  /// GenericDeviceTy::allocateWithVirtualAddress(), and unmap the virtual
+  /// address range.
+  virtual Error deallocateWithVirtualAddress(void *VAddr, uint64_t Size) {
     return Plugin::error(error::ErrorCode::UNSUPPORTED,
                          "allocate with virtual address not supported");
   }
