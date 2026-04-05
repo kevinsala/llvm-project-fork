@@ -99,8 +99,6 @@ DLWRAP(cuStreamWaitEvent, 3)
 DLWRAP(cuEventSynchronize, 1)
 DLWRAP(cuEventDestroy, 1)
 
-DLWRAP_FINALIZE()
-
 DLWRAP(cuMemUnmap, 2)
 DLWRAP(cuMemRelease, 1)
 DLWRAP(cuMemAddressFree, 2)
@@ -110,6 +108,8 @@ DLWRAP(cuMemMap, 5)
 DLWRAP(cuMemCreate, 4)
 DLWRAP(cuMemSetAccess, 4)
 DLWRAP(cuMemGetAllocationGranularity, 3)
+
+DLWRAP_FINALIZE()
 
 #ifndef DYNAMIC_CUDA_PATH
 #define DYNAMIC_CUDA_PATH "libcuda.so"
