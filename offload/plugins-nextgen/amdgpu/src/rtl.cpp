@@ -2327,7 +2327,7 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
   }
 
   /// Suggest a virtual address for device memory mapping.
-  virtual void *getSuggestedVirtualAddress() {
+  void *getSuggestedVirtualAddress() override {
     return reinterpret_cast<void *>(0x1534f7e00000ULL);
   }
 

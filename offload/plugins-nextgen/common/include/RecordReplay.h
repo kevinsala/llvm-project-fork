@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <unordered_set>
 
 #include "Shared/APITypes.h"
 #include "Shared/EnvironmentVar.h"
@@ -38,118 +39,209 @@ struct GenericKernelTy;
 struct GenericDeviceTy;
 
 struct RecordReplayTy {
+protected:
+  struct InstanceTy;
 
+public:
   /// Describes the state of the record replay mechanism.
-  enum RRStatusTy { RRDeactivated = 0, RRRecording, RRReplaying };
+  enum StatusTy { Deactivated = 0, Recording, Replaying };
 
-  /// Describes the format of the recording.
-  enum RRFormatTy { RRNative = 0, RRMneme };
+  /// Describes the format of the recording and replaying.
+  enum FormatTy { Native = 0, Mneme };
 
-  /// Identification of the kernel recording.
-  struct RRHandleTy {
-    size_t KernelHash = 0;
-    size_t LaunchConfigHash = 0;
+  struct HandleTy {
+    const InstanceTy *Instance = nullptr;
+    bool Active = false;
   };
 
 protected:
-  void *RRStartAddr = nullptr;
-  uint64_t RRTotalSize = 0;
-  uint64_t RRSize = 0;
-  RRStatusTy RRStatus;
-  bool RRSaveOutput;
-  GenericDeviceTy &RRDevice;
-  std::mutex RRAllocationLock;
+  /// Address and size of record replay memory space.
+  void *StartAddr = nullptr;
+  uint64_t TotalSize = 0;
+  uint64_t CurrentSize = 0;
+  std::mutex AllocationLock;
 
-  // A list of all globals mapped to the device.
-  struct GlobalEntry {
+  /// Status of the record or replay.
+  StatusTy Status;
+
+  /// Whether the record replay should save a memory snapshot after a kernel
+  /// execution.
+  bool SaveOutput;
+
+  /// Reference to the corresponding device.
+  GenericDeviceTy &Device;
+
+  /// The information for a global.
+  struct GlobalEntryTy {
     std::string Name;
     uint64_t Size;
     void *Addr;
   };
-  llvm::SmallVector<GlobalEntry> GlobalEntries;
+
+  /// List of all globals mapped to the device.
+  llvm::SmallVector<GlobalEntryTy> GlobalEntries;
+
+  // An instance of a kernel record replay.
+  struct InstanceTy {
+    /// The launch configuration parameters.
+    uint32_t NumTeams = 0;
+    uint32_t NumThreads = 0;
+    uint32_t SharedMemorySize = 0;
+
+    /// The hashes representing the kernel and the launch configuration.
+    size_t KernelHash = 0;
+    size_t LaunchConfigHash = 0;
+
+    /// The number of occurrences during the execution.
+    mutable size_t Occurrences = 0;
+
+    InstanceTy(StringRef KernelName, uint32_t NumTeams, uint32_t NumThreads,
+               uint32_t SharedMemorySize)
+        : NumTeams(NumTeams), NumThreads(NumThreads),
+          SharedMemorySize(SharedMemorySize) {
+      KernelHash = stable_hash_name(KernelName);
+      LaunchConfigHash =
+          stable_hash_combine((stable_hash)NumTeams, (stable_hash)NumThreads,
+                              (stable_hash)SharedMemorySize);
+    }
+
+    bool operator==(const InstanceTy &Other) const {
+      return (KernelHash == Other.KernelHash &&
+              LaunchConfigHash == Other.LaunchConfigHash &&
+              NumTeams == Other.NumTeams && NumThreads == Other.NumThreads &&
+              SharedMemorySize == Other.SharedMemorySize);
+    }
+  };
+
+  struct InstanceHasher {
+    std::size_t operator()(const InstanceTy &I) const {
+      llvm::stable_hash H =
+          llvm::stable_hash_combine(I.KernelHash, I.LaunchConfigHash);
+      return static_cast<std::size_t>(H);
+    }
+  };
+
+  /// Tracker of record replay instances.
+  std::unordered_set<InstanceTy, InstanceHasher> Instances;
+  std::mutex InstancesLock;
 
 public:
-  RecordReplayTy(RRStatusTy Status, bool SaveOutput, GenericDeviceTy &Device)
-      : RRStatus(Status), RRSaveOutput(SaveOutput), RRDevice(Device) {}
+  RecordReplayTy(StatusTy Status, bool SaveOutput, GenericDeviceTy &Device)
+      : Status(Status), SaveOutput(SaveOutput), Device(Device) {}
 
   virtual ~RecordReplayTy() = default;
 
-  void setStatus(RRStatusTy Status) { RRStatus = Status; }
-  bool isRecording() const { return RRStatus == RRStatusTy::RRRecording; }
-  bool isReplaying() const { return RRStatus == RRStatusTy::RRReplaying; }
-  bool isRecordingOrReplaying() const { return isRecording() || isReplaying(); }
-  bool shouldRecordOutput() const { return RRSaveOutput; }
-  bool shouldRecordPrologue() const { return isRecording(); }
-  bool shouldRecordEpilogue() const { return isRecordingOrReplaying(); }
-  void addEntry(const char *Name, uint64_t Size, void *Addr) {
-    GlobalEntries.emplace_back(GlobalEntry{Name, Size, Addr});
-  }
-
-  virtual Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
-                               uint32_t NumParams,
-                               const KernelLaunchParamsTy &LaunchParams) = 0;
-  virtual Error recordEpilogue(const GenericKernelTy &Kernel,
-                               RRHandleTy Handle) = 0;
-  virtual Error recordDescriptor(const GenericKernelTy &Kernel,
-                                 RRHandleTy Handle,
-                                 KernelLaunchParamsTy LaunchParams,
-                                 int32_t NumArgs, uint64_t NumTeams,
-                                 uint32_t NumThreads,
-                                 uint64_t LoopTripCount) = 0;
-
-  void *alloc(uint64_t Size);
-
+  /// Initialize kernel record replay for the corresponding device.
   Error init(uint64_t MemSize, void *VAddr);
   Error deinit();
 
-  static RRHandleTy createHandle(const GenericKernelTy &Kernel,
-                                 uint64_t NumTeams, uint32_t NumThreads,
-                                 uint32_t SharedMemorySize);
-};
+  bool isRecording() const { return Status == StatusTy::Recording; }
+  bool isReplaying() const { return Status == StatusTy::Replaying; }
+  bool isRecordingOrReplaying() const { return isRecording() || isReplaying(); }
+  bool shouldRecordPrologue() const { return isRecording(); }
+  bool shouldRecordEpilogue() const {
+    return isRecordingOrReplaying() && SaveOutput;
+  }
 
-struct MnemeRecordReplayTy : public RecordReplayTy {
-  MnemeRecordReplayTy(RRStatusTy Status, bool SaveOutput,
-                      GenericDeviceTy &Device)
-      : RecordReplayTy(Status, SaveOutput, Device) {}
+  /// Add information about a global.
+  void addGlobal(const char *Name, uint64_t Size, void *Addr) {
+    GlobalEntries.emplace_back(GlobalEntryTy{Name, Size, Addr});
+  }
 
-  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
-                       uint32_t NumParams,
-                       const KernelLaunchParamsTy &LaunchParams) override;
-  Error recordEpilogue(const GenericKernelTy &Kernel,
-                       RRHandleTy Handle) override;
-  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle,
-                         KernelLaunchParamsTy LaunchParams, int32_t NumArgs,
-                         uint64_t NumTeams, uint32_t NumThreads,
-                         uint64_t LoopTripCount) override;
+  /// Record the prologue and return the handle. This phase can include the
+  /// recording of memory snapshot, the record descriptor and the globals.
+  Expected<HandleTy>
+  recordPrologue(const GenericKernelTy &Kernel, const KernelArgsTy &KernelArgs,
+                 const KernelLaunchParamsTy &LaunchParams, uint32_t NumTeams[3],
+                 uint32_t NumThreads[3], uint32_t SharedMemorySize);
+
+  /// Record the epilogue, which can include the memory snapshot when recording
+  /// or replaying.
+  Error recordEpilogue(const GenericKernelTy &Kernel, HandleTy Handle);
+
+  /// Allocates device memory from the record replay space.
+  void *allocate(uint64_t Size);
 
 private:
+  /// Register an instance and return a reference and whether it was registered
+  /// as a new instance.
+  std::pair<const InstanceTy &, bool>
+  registerInstance(StringRef KernelName, uint32_t NumTeams, uint32_t NumThreads,
+                   uint32_t SharedMemorySize);
+
+  /// The interface that should be provided by kernel record replay
+  /// implementations.
+  virtual Error
+  recordPrologueImpl(const GenericKernelTy &Kernel, const InstanceTy &Instance,
+                     const KernelArgsTy &KernelArgs,
+                     const KernelLaunchParamsTy &LaunchParams) = 0;
+  virtual Error recordEpilogueImpl(const GenericKernelTy &Kernel,
+                                   const InstanceTy &Instance) = 0;
+  virtual Error recordDescriptorImpl(const GenericKernelTy &Kernel,
+                                     const InstanceTy &Instance,
+                                     const KernelArgsTy &KernelArgs,
+                                     const KernelLaunchParamsTy &LaunchParams,
+                                     uint32_t NumTeams[3],
+                                     uint32_t NumThreads[3],
+                                     uint32_t SharedMemorySize) = 0;
+};
+
+/// The native kernel record replay support.
+struct NativeRecordReplayTy : public RecordReplayTy {
+  NativeRecordReplayTy(StatusTy Status, bool SaveOutput,
+                       GenericDeviceTy &Device)
+      : RecordReplayTy(Status, SaveOutput, Device) {}
+
+private:
+  Error recordPrologueImpl(const GenericKernelTy &Kernel,
+                           const InstanceTy &Instance,
+                           const KernelArgsTy &KernelArgs,
+                           const KernelLaunchParamsTy &LaunchParams) override;
+  Error recordEpilogueImpl(const GenericKernelTy &Kernel,
+                           const InstanceTy &Instance) override;
+  Error recordDescriptorImpl(const GenericKernelTy &Kernel,
+                             const InstanceTy &Instance,
+                             const KernelArgsTy &KernelArgs,
+                             const KernelLaunchParamsTy &LaunchParams,
+                             uint32_t NumTeams[3], uint32_t NumThreads[3],
+                             uint32_t SharedMemorySize) override;
+
+  /// Record a memory snapshot on a file.
+  Error recordSnapshot(StringRef Filename);
+
+  /// Record the globals on a file.
+  Error recordGlobals(StringRef Filename);
+
+  /// Record the device image on a file.
+  Error recordImage(const GenericKernelTy &Kernel, StringRef Filename);
+};
+
+/// The Mneme kernel record support.
+struct MnemeRecordReplayTy : public RecordReplayTy {
+  MnemeRecordReplayTy(StatusTy Status, bool SaveOutput, GenericDeviceTy &Device)
+      : RecordReplayTy(Status, SaveOutput, Device) {}
+
+private:
+  Error recordPrologueImpl(const GenericKernelTy &Kernel,
+                           const InstanceTy &Instance,
+                           const KernelArgsTy &KernelArgs,
+                           const KernelLaunchParamsTy &LaunchParams) override;
+  Error recordEpilogueImpl(const GenericKernelTy &Kernel,
+                           const InstanceTy &Instance) override;
+  Error recordDescriptorImpl(const GenericKernelTy &Kernel,
+                             const InstanceTy &Instance,
+                             const KernelArgsTy &KernelArgs,
+                             const KernelLaunchParamsTy &LaunchParams,
+                             uint32_t NumTeams[3], uint32_t NumThreads[3],
+                             uint32_t SharedMemorySize) override;
+
   Error recordSnapshot(StringRef Filename, DeviceImageTy &Image,
                        uint32_t NumParams,
                        const KernelLaunchParamsTy &LaunchParams);
 
   static std::string getSnapshotFilename(const GenericKernelTy &Kernel,
-                                         RRHandleTy Handle, bool IsPrologue);
-};
-
-struct NativeRecordReplayTy : public RecordReplayTy {
-  NativeRecordReplayTy(RRStatusTy Status, bool SaveOutput,
-                       GenericDeviceTy &Device)
-      : RecordReplayTy(Status, SaveOutput, Device) {}
-
-  Error recordPrologue(const GenericKernelTy &Kernel, RRHandleTy Handle,
-                       uint32_t NumParams,
-                       const KernelLaunchParamsTy &LaunchParams) override;
-  Error recordEpilogue(const GenericKernelTy &Kernel,
-                       RRHandleTy Handle) override;
-  Error recordDescriptor(const GenericKernelTy &Kernel, RRHandleTy Handle,
-                         KernelLaunchParamsTy LaunchParams, int32_t NumArgs,
-                         uint64_t NumTeams, uint32_t NumThreads,
-                         uint64_t LoopTripCount) override;
-
-private:
-  Error recordSnapshot(StringRef Filename);
-  Error recordGlobals(StringRef Filename);
-  Error recordImage(const GenericKernelTy &Kernel, StringRef Filename);
+                                         const InstanceTy &Instance,
+                                         bool IsPrologue);
 };
 
 } // namespace plugin

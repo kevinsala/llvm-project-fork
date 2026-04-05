@@ -680,7 +680,7 @@ struct CUDADeviceTy : public GenericDeviceTy {
   }
 
   /// Suggest a virtual address for device memory mapping.
-  virtual void *getSuggestedVirtualAddress() {
+  void *getSuggestedVirtualAddress() override {
     return reinterpret_cast<void *>(0x153940000000ULL);
   }
 

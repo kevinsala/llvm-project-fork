@@ -232,7 +232,7 @@ GenericKernelTy::prepareBlockMemory(GenericDeviceTy &GenericDevice,
 Error GenericKernelTy::launch(GenericDeviceTy &GenericDevice, void **ArgPtrs,
                               ptrdiff_t *ArgOffsets, KernelArgsTy &KernelArgs,
                               AsyncInfoWrapperTy &AsyncInfoWrapper,
-                              RecordReplayTy::RRHandleTy *RRHandle) const {
+                              RecordReplayTy::HandleTy *RRHandle) const {
   llvm::SmallVector<void *, 16> Args;
   llvm::SmallVector<void *, 16> Ptrs;
 
@@ -277,18 +277,14 @@ Error GenericKernelTy::launch(GenericDeviceTy &GenericDevice, void **ArgPtrs,
   // Record the kernel description after we modified the argument count and num
   // blocks/threads.
   RecordReplayTy *RecordReplay = GenericDevice.getRecordReplay();
-  if (RecordReplay && RecordReplay->shouldRecordPrologue()) {
-    auto Handle = RecordReplayTy::createHandle(
-        *this, NumBlocks[0], NumThreads[0], DynBlockMemConf.NativeSize);
+  if (RecordReplay) {
+    auto RRHandleOrErr =
+        RecordReplay->recordPrologue(*this, KernelArgs, LaunchParams, NumBlocks,
+                                     NumThreads, DynBlockMemConf.NativeSize);
+    if (!RRHandleOrErr)
+      return RRHandleOrErr.takeError();
     if (RRHandle)
-      *RRHandle = Handle;
-    if (auto Err = RecordReplay->recordPrologue(
-            *this, Handle, KernelArgs.NumArgs, LaunchParams))
-      return Err;
-    if (auto Err = RecordReplay->recordDescriptor(
-            *this, Handle, LaunchParams, KernelArgs.NumArgs, NumBlocks[0],
-            NumThreads[0], KernelArgs.Tripcount))
-      return Err;
+      *RRHandle = *RRHandleOrErr;
   }
 
   if (auto Err =
@@ -947,7 +943,7 @@ Expected<void *> GenericDeviceTy::dataAlloc(int64_t Size, void *HostPtr,
   void *Alloc = nullptr;
 
   if (RecordReplay && RecordReplay->isRecordingOrReplaying())
-    return RecordReplay->alloc(Size);
+    return RecordReplay->allocate(Size);
 
   switch (Kind) {
   case TARGET_ALLOC_DEFAULT:
@@ -1128,14 +1124,14 @@ Error GenericDeviceTy::launchKernel(void *EntryPtr, void **ArgPtrs,
         .emplace(&GenericKernel, std::move(StackTrace), AsyncInfo);
   }
 
-  RecordReplayTy::RRHandleTy RRHandle;
+  RecordReplayTy::HandleTy RRHandle;
   auto Err = GenericKernel.launch(*this, ArgPtrs, ArgOffsets, KernelArgs,
                                   AsyncInfoWrapper, &RRHandle);
 
   // 'finalize' here to guarantee next record-replay actions are in-sync
   AsyncInfoWrapper.finalize(Err);
 
-  if (RecordReplay && RecordReplay->shouldRecordEpilogue())
+  if (RecordReplay)
     if (auto Err = RecordReplay->recordEpilogue(GenericKernel, RRHandle))
       return Err;
 
@@ -1848,7 +1844,7 @@ int32_t GenericPluginTy::get_global(__tgt_device_binary Binary, uint64_t Size,
   // Save the loaded globals if we are recording.
   RecordReplayTy *RecordReplay = Device.getRecordReplay();
   if (RecordReplay && RecordReplay->isRecording())
-    RecordReplay->addEntry(Name, Size, *DevicePtr);
+    RecordReplay->addGlobal(Name, Size, *DevicePtr);
 
   return OFFLOAD_SUCCESS;
 }

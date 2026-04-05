@@ -416,7 +416,7 @@ struct GenericKernelTy {
   Error launch(GenericDeviceTy &GenericDevice, void **ArgPtrs,
                ptrdiff_t *ArgOffsets, KernelArgsTy &KernelArgs,
                AsyncInfoWrapperTy &AsyncInfoWrapper,
-               RecordReplayTy::RRHandleTy *RRHandle = nullptr) const;
+               RecordReplayTy::HandleTy *RRHandle = nullptr) const;
   virtual Error launchImpl(GenericDeviceTy &GenericDevice,
                            uint32_t NumThreads[3], uint32_t NumBlocks[3],
                            uint32_t DynBlockMemSize, KernelArgsTy &KernelArgs,
@@ -1230,9 +1230,9 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
       return Plugin::error(error::ErrorCode::UNSUPPORTED,
                            "replay not available in non-native RR");
 
-    RecordReplayTy::RRStatusTy Status =
-        IsRecord ? RecordReplayTy::RRStatusTy::RRRecording
-                 : RecordReplayTy::RRStatusTy::RRReplaying;
+    RecordReplayTy::StatusTy Status = IsRecord
+                                          ? RecordReplayTy::StatusTy::Recording
+                                          : RecordReplayTy::StatusTy::Replaying;
 
     if (IsNative)
       RecordReplay = new NativeRecordReplayTy(Status, SaveOutput, *this);
