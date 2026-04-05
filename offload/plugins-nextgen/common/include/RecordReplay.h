@@ -78,10 +78,9 @@ public:
   bool isRecording() const { return RRStatus == RRStatusTy::RRRecording; }
   bool isReplaying() const { return RRStatus == RRStatusTy::RRReplaying; }
   bool isRecordingOrReplaying() const { return isRecording() || isReplaying(); }
+  bool shouldRecordOutput() const { return RRSaveOutput; }
   bool shouldRecordPrologue() const { return isRecording(); }
-  bool shouldRecordEpilogue() const {
-    return isRecordingOrReplaying() && RRSaveOutput;
-  }
+  bool shouldRecordEpilogue() const { return isRecordingOrReplaying(); }
   void addEntry(const char *Name, uint64_t Size, void *Addr) {
     GlobalEntries.emplace_back(GlobalEntry{Name, Size, Addr});
   }
