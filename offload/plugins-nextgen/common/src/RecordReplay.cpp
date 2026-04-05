@@ -305,18 +305,23 @@ Error NativeRecordReplayTy::recordPrologue(
 
 Error NativeRecordReplayTy::recordEpilogue(const GenericKernelTy &Kernel,
                                            RRHandleTy Handle) {
-  SmallString<128> GlobalsFilename = {Kernel.getName(), ".globals"};
-  if (auto Err = recordGlobals(GlobalsFilename))
-    return Err;
+  if (isRecording()) {
+    SmallString<128> GlobalsFilename = {Kernel.getName(), ".globals"};
+    if (auto Err = recordGlobals(GlobalsFilename))
+      return Err;
 
-  SmallString<128> ImageFilename = {Kernel.getName(), ".image"};
-  if (auto Err = recordImage(Kernel, ImageFilename))
-    return Err;
+    SmallString<128> ImageFilename = {Kernel.getName(), ".image"};
+    if (auto Err = recordImage(Kernel, ImageFilename))
+      return Err;
+  }
 
-  SmallString<128> SnapshotFilename = {
-      Kernel.getName(),
-      (isRecording() ? ".original.output" : ".replay.output")};
-  return recordSnapshot(SnapshotFilename);
+  if (shouldRecordOutput()) {
+    SmallString<128> SnapshotFilename = {
+        Kernel.getName(),
+        (isRecording() ? ".original.output" : ".replay.output")};
+    return recordSnapshot(SnapshotFilename);
+  }
+  return Plugin::success();
 }
 
 Error NativeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel,
@@ -337,7 +342,7 @@ Error NativeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel,
 
   json::Array JsonArgPtrs;
   for (int I = 0; I < NumArgs; ++I)
-    JsonArgPtrs.push_back((intptr_t)LaunchParams.Ptrs[I]);
+    JsonArgPtrs.push_back((intptr_t)(*(void **)LaunchParams.Ptrs[I]));
   JsonKernelInfo["ArgPtrs"] = json::Value(std::move(JsonArgPtrs));
 
   json::Array JsonArgOffsets;
