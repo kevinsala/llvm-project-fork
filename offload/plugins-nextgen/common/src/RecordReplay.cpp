@@ -338,7 +338,8 @@ Error NativeRecordReplayTy::recordDescriptor(const GenericKernelTy &Kernel,
   JsonKernelInfo["LoopTripCount"] = LoopTripCount;
   JsonKernelInfo["DeviceMemorySize"] = RRSize;
   JsonKernelInfo["DeviceId"] = RRDevice.getDeviceId();
-  JsonKernelInfo["BumpAllocVAStart"] = (intptr_t)RRStartAddr;
+  JsonKernelInfo["VAllocAddr"] = (intptr_t)RRStartAddr;
+  JsonKernelInfo["VAllocSize"] = RRTotalSize;
 
   json::Array JsonArgPtrs;
   for (int I = 0; I < NumArgs; ++I)
