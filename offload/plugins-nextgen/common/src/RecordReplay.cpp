@@ -259,6 +259,9 @@ void *RecordReplayTy::alloc(uint64_t Size) {
 }
 
 Error RecordReplayTy::init(uint64_t MemSize, void *VAddr) {
+  if (!VAddr)
+    VAddr = RRDevice.getSuggestedVirtualAddress();
+
   auto StartAddrOrErr = RRDevice.allocateWithVirtualAddress(MemSize, VAddr);
   if (!StartAddrOrErr)
     return StartAddrOrErr.takeError();
