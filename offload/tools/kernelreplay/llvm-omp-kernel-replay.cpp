@@ -91,8 +91,10 @@ int main(int argc, char **argv) {
   for (auto It : *TgtArgOffsetsArray)
     TgtArgOffsets.push_back(static_cast<ptrdiff_t>(It.getAsInteger().value()));
 
-  void *BAllocStart = reinterpret_cast<void *>(
-      JsonKernelInfo->getAsObject()->getInteger("BumpAllocVAStart").value());
+  void *VAllocAddr = reinterpret_cast<void *>(
+      JsonKernelInfo->getAsObject()->getInteger("VAllocAddr").value());
+  uint64_t VAllocSize =
+      JsonKernelInfo->getAsObject()->getInteger("VAllocSize").value();
 
   llvm::offloading::EntryTy KernelEntry = {
       0x0, 0x1,    object::OffloadKind::OFK_OpenMP, 0, nullptr, nullptr, 0,
@@ -135,8 +137,8 @@ int main(int argc, char **argv) {
   __tgt_register_lib(&Desc);
 
   uint64_t ReqPtrArgOffset = 0;
-  int Rc = __tgt_activate_record_replay(DeviceId, DeviceMemorySize, BAllocStart,
-                                        false, VerifyOpt, ReqPtrArgOffset);
+  int Rc = __tgt_activate_record_replay(DeviceId, VAllocSize, VAllocAddr, false,
+                                        VerifyOpt, ReqPtrArgOffset);
 
   if (Rc != OMP_TGT_SUCCESS) {
     report_fatal_error("Cannot activate record replay\n");
@@ -161,8 +163,8 @@ int main(int argc, char **argv) {
     for (auto *&Arg : TgtArgs) {
       auto ArgInt = uintptr_t(Arg);
       // Try to find pointer arguments.
-      if (ArgInt < uintptr_t(BAllocStart) ||
-          ArgInt >= uintptr_t(BAllocStart) + DeviceMemorySize)
+      if (ArgInt < uintptr_t(VAllocAddr) ||
+          ArgInt >= uintptr_t(VAllocAddr) + VAllocSize)
         continue;
       Arg = reinterpret_cast<void *>(ArgInt - ReqPtrArgOffset);
     }
