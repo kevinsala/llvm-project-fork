@@ -122,11 +122,6 @@ int main(int argc, char **argv) {
   Desc.HostEntriesEnd = &KernelEntry + 1;
   Desc.DeviceImages = &DeviceImage;
 
-  auto DeviceMemorySizeJson =
-      JsonKernelInfo->getAsObject()->getInteger("DeviceMemorySize");
-  // Set device memory size to the ceiling of GB granularity.
-  uint64_t DeviceMemorySize = std::ceil(DeviceMemorySizeJson.value());
-
   auto DeviceIdJson = JsonKernelInfo->getAsObject()->getInteger("DeviceId");
   // TODO: Print warning if the user overrides the device id in the json file.
   int32_t DeviceId = (DeviceIdOpt > -1 ? DeviceIdOpt : DeviceIdJson.value());
