@@ -94,14 +94,13 @@ llvm::Error DeviceTy::init() {
     Int64Envar OMPX_RecordMemSize("LIBOMPTARGET_RR_MEM_SIZE",
                                   8 * 1024 * 1024 * 1024ULL);
     Int32Envar OMPX_RecordDevice("LIBOMPTARGET_RR_DEVICE", 0);
-    BoolEnvar OMPX_RecordMneme("LIBOMPTARGET_RR_MNEME", false);
     if (OMPX_RecordDevice != RTLDeviceID)
       return llvm::Error::success();
 
     uint64_t ReqPtrArgOffset;
     Ret =
         RTL->initialize_record_replay(RTLDeviceID, OMPX_RecordMemSize, nullptr,
-                                      /*IsRecord=*/true, !OMPX_RecordMneme,
+                                      /*IsRecord=*/true, /*IsNative=*/true,
                                       OMPX_ReplaySaveOutput, ReqPtrArgOffset);
     if (Ret != OFFLOAD_SUCCESS)
       return error::createOffloadError(error::ErrorCode::BACKEND_FAILURE,

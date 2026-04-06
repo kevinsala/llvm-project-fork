@@ -47,7 +47,7 @@ public:
   enum StatusTy { Deactivated = 0, Recording, Replaying };
 
   /// Describes the format of the recording and replaying.
-  enum FormatTy { Native = 0, Mneme };
+  enum FormatTy { Native = 0 };
 
   struct HandleTy {
     const InstanceTy *Instance = nullptr;
@@ -214,34 +214,6 @@ private:
 
   /// Record the device image on a file.
   Error recordImage(const GenericKernelTy &Kernel, StringRef Filename);
-};
-
-/// The Mneme kernel record support.
-struct MnemeRecordReplayTy : public RecordReplayTy {
-  MnemeRecordReplayTy(StatusTy Status, bool SaveOutput, GenericDeviceTy &Device)
-      : RecordReplayTy(Status, SaveOutput, Device) {}
-
-private:
-  Error recordPrologueImpl(const GenericKernelTy &Kernel,
-                           const InstanceTy &Instance,
-                           const KernelArgsTy &KernelArgs,
-                           const KernelLaunchParamsTy &LaunchParams) override;
-  Error recordEpilogueImpl(const GenericKernelTy &Kernel,
-                           const InstanceTy &Instance) override;
-  Error recordDescriptorImpl(const GenericKernelTy &Kernel,
-                             const InstanceTy &Instance,
-                             const KernelArgsTy &KernelArgs,
-                             const KernelLaunchParamsTy &LaunchParams,
-                             uint32_t NumTeams[3], uint32_t NumThreads[3],
-                             uint32_t SharedMemorySize) override;
-
-  Error recordSnapshot(StringRef Filename, DeviceImageTy &Image,
-                       uint32_t NumParams,
-                       const KernelLaunchParamsTy &LaunchParams);
-
-  static std::string getSnapshotFilename(const GenericKernelTy &Kernel,
-                                         const InstanceTy &Instance,
-                                         bool IsPrologue);
 };
 
 } // namespace plugin
