@@ -381,12 +381,6 @@
           integer(kind=omp_integer_kind) :: omp_get_thread_limit_dim
         end function omp_get_thread_limit_dim
 
-        function omp_get_thread_limit_dim(dim) bind(c)
-          import
-          integer(kind=omp_integer_kind), value :: dim
-          integer(kind=omp_integer_kind) :: omp_get_thread_limit_dim
-        end function omp_get_thread_limit_dim
-
         subroutine omp_set_max_active_levels(max_levels) bind(c)
           import
           integer (kind=omp_integer_kind), value :: max_levels
