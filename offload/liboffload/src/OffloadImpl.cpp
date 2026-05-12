@@ -1074,6 +1074,7 @@ Error olLaunchKernel_impl(ol_queue_handle_t Queue, ol_device_handle_t Device,
   LaunchArgs.ThreadLimit[1] = LaunchSizeArgs->GroupSize.y;
   LaunchArgs.ThreadLimit[2] = LaunchSizeArgs->GroupSize.z;
   LaunchArgs.DynCGroupMem = LaunchSizeArgs->DynSharedMemory;
+  LaunchArgs.Flags.DynCGroupMemFallback = static_cast<uint64_t>(DynCGroupMemFallbackType::Abort);
 
   KernelLaunchParamsTy Params;
   Params.Data = const_cast<void *>(ArgumentsData);

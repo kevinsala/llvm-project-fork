@@ -2481,6 +2481,7 @@ int target_replay(ident_t *Loc, DeviceTy &Device, void *HostPtr,
   KernelArgs.ThreadLimit[1] = 1;
   KernelArgs.ThreadLimit[2] = 1;
   KernelArgs.DynCGroupMem = SharedMemorySize;
+  KernelArgs.Flags.DynCGroupMemFallback = static_cast<uint64_t>(DynCGroupMemFallbackType::Abort);
 
   KernelExtraArgsTy KernelExtraArgs{};
   KernelExtraArgs.ReplayOutcome = ReplayOutcome;
