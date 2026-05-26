@@ -20,6 +20,7 @@
 #include "flang/Support/Fortran-features.h"
 #include "flang/Support/LangOptions.h"
 #include <iosfwd>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -55,6 +56,11 @@ namespace Fortran::semantics {
 class Symbol;
 class CommonBlockMap;
 using CommonBlockList = std::vector<std::pair<SymbolRef, std::size_t>>;
+
+// `device_type` modifier values that can appear on `!$omp groupprivate`.
+// Kept as a semantics-layer enum so this header does not depend on MLIR.
+// The lowering layer converts to mlir::omp::DeclareTargetDeviceType.
+enum class OmpGroupprivateDeviceType { Any, Host, Nohost };
 
 using ConstructNode = std::variant<const parser::AssociateConstruct *,
     const parser::BlockConstruct *, const parser::CaseConstruct *,
@@ -336,6 +342,19 @@ public:
   void NoteUsedSymbols(const UnorderedSymbolSet &);
   bool IsSymbolUsed(const Symbol &) const;
 
+  // Record the `device_type` modifier observed on a `!$omp groupprivate`
+  // directive declaring \p symbol. Called during semantic analysis so the
+  // value is available before any OpenMP lowering, removing the dependency on
+  // lowering order between the directive's owning unit and any teams region
+  // that references the symbol.
+  void SetOmpGroupprivateDeviceType(const Symbol &, OmpGroupprivateDeviceType);
+  // Look up the recorded `device_type` modifier for \p symbol. Returns
+  // std::nullopt for symbols not flagged as groupprivate (or flagged before
+  // this mechanism was populated), in which case the caller should default to
+  // OmpGroupprivateDeviceType::Any per the OpenMP spec.
+  std::optional<OmpGroupprivateDeviceType> GetOmpGroupprivateDeviceType(
+      const Symbol &) const;
+
   void DumpSymbols(llvm::raw_ostream &);
 
   // Top-level ProgramTrees are owned by the SemanticsContext for persistence.
@@ -396,6 +415,8 @@ private:
   UnorderedSymbolSet isDefined_;
   UnorderedSymbolSet isUsed_;
   std::list<ProgramTree> programTrees_;
+  std::map<SymbolRef, OmpGroupprivateDeviceType, SymbolAddressCompare>
+      ompGroupprivateDeviceTypes_;
 };
 
 class Semantics {
