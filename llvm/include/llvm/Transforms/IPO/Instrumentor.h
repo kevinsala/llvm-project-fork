@@ -570,6 +570,9 @@ struct InstrumentationOpportunity {
 /// provided by overriding getName().
 template <unsigned... Opcodes>
 struct InstructionIO : public InstrumentationOpportunity {
+  static constexpr std::array<unsigned, sizeof...(Opcodes)> OpcodesArray = {
+      Opcodes...};
+
   virtual ~InstructionIO() {}
 
   /// Construct an instruction opportunity.
@@ -580,14 +583,10 @@ struct InstructionIO : public InstrumentationOpportunity {
   }
 
   /// Get all opcodes for this instrumentation opportunity (override).
-  ArrayRef<unsigned> getAllOpcodes() const override {
-    static constexpr std::array<unsigned, sizeof...(Opcodes)> OpcodesArray = {
-        Opcodes...};
-    return OpcodesArray;
-  }
+  ArrayRef<unsigned> getAllOpcodes() const override { return OpcodesArray; }
 
   /// Get the number of opcodes.
-  static constexpr size_t getNumOpcodes() { return sizeof...(Opcodes); }
+  static constexpr size_t getNumOpcodes() { return OpcodesArray.size(); }
 
   /// Get the name of the instruction. For single-opcode IOs, this defaults to
   /// the opcode name. For multi-opcode IOs, getName() MUST be overridden to
@@ -598,12 +597,7 @@ struct InstructionIO : public InstrumentationOpportunity {
     assert(sizeof...(Opcodes) == 1 &&
            "Multi-opcode InstructionIO must override getName() to provide an "
            "explicit name instead of using the first opcode");
-    // Get the first opcode from the opcodes array.
-    constexpr unsigned FirstOpcode = [] {
-      constexpr unsigned OpcodesArray[] = {Opcodes...};
-      return OpcodesArray[0];
-    }();
-    return Instruction::getOpcodeName(FirstOpcode);
+    return Instruction::getOpcodeName(OpcodesArray[0]);
   }
 };
 
