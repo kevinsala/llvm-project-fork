@@ -6440,6 +6440,8 @@ initTargetDefaultAttrs(omp::TargetOp targetOp, Operation *capturedOp,
 
     if (auto val = extractConstInteger(clauseValue)) {
       result = *val;
+      if (result < 0)
+        result = 0;
       return;
     }
 
