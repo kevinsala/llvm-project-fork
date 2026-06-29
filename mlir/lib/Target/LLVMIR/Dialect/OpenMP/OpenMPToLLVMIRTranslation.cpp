@@ -6438,13 +6438,17 @@ initTargetDefaultAttrs(omp::TargetOp targetOp, Operation *capturedOp,
     if (!clauseValue)
       return;
 
-    if (auto val = extractConstInteger(clauseValue))
+    if (auto val = extractConstInteger(clauseValue)) {
       result = *val;
+      return;
+    }
 
-    // Found an applicable clause, so it's not undefined. Mark as unknown
-    // because it's not constant.
-    if (result < 0)
-      result = 0;
+    // An applicable clause with a non-constant value: mark as unknown (0)
+    // regardless of the initial sentinel. This must override a sentinel of 1
+    // (clause specified, trailing dims default to 1); otherwise a runtime
+    // thread/team count would be left at 1 and incorrectly clamp the kernel
+    // launch bounds to a single thread.
+    result = 0;
   };
 
 // Extract 'thread_limit' clause from 'target' and 'teams'. The number of
