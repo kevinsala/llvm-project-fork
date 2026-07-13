@@ -2749,9 +2749,9 @@ public:
     omp::OMPTgtExecModeFlags ExecFlags =
         omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
     SmallVector<int32_t, 3> MaxTeams = {-1};
-    int32_t MinTeams = 1;
+    SmallVector<int32_t, 3> MinTeams = {1};
     SmallVector<int32_t, 3> MaxThreads = {-1};
-    int32_t MinThreads = 1;
+    SmallVector<int32_t, 3> MinThreads = {1};
     int32_t ReductionDataSize = 0;
   };
 
