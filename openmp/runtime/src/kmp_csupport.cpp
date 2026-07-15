@@ -4523,15 +4523,15 @@ int omp_get_team_num_dim(int Dim) { return 1; }
 
 int omp_get_num_teams_dim(int Dim) { return 1; }
 
-void *omp_get_dyn_groupprivate_ptr(size_t offset, omp_access_t access_group) {
+void *omp_get_dyn_gprivate_ptr(size_t offset, omp_access_t access_group) {
   return NULL;
 }
 
-void *omp_get_dyn_groupprivate_fallback_ptr(size_t offset, omp_access_t access_group) {
+void *omp_get_dyn_gprivate_nofb_ptr(size_t offset, omp_access_t access_group) {
   return NULL;
 }
 
-size_t omp_get_dyn_groupprivate_size(omp_access_t access_group) { return 0; }
+size_t omp_get_dyn_gprivate_size(omp_access_t access_group) { return 0; }
 
 int __kmpc_get_target_offload(void) {
   if (!__kmp_init_serial) {

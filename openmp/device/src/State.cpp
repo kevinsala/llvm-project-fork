@@ -513,17 +513,17 @@ int omp_get_initial_device(void) { return -1; }
 
 int omp_is_initial_device(void) { return 0; }
 
-void *omp_get_dyn_groupprivate_ptr(size_t Offset, omp_access_t) {
+void *omp_get_dyn_gprivate_nofb_ptr(size_t Offset, omp_access_t) {
   unsigned char *Ptr = DynCGroupMem.getNativeOrNullPtr();
   Ptr = (unsigned char *) __builtin_assume_aligned(Ptr, 16);
   return (ShmemPtrTy) (Ptr + Offset);
 }
 
-void *omp_get_dyn_groupprivate_fallback_ptr(size_t Offset, omp_access_t) {
+void *omp_get_dyn_gprivate_ptr(size_t Offset, omp_access_t) {
   return DynCGroupMem.getNativeOrFallbackPtr() + Offset;
 }
 
-size_t omp_get_dyn_groupprivate_size(omp_access_t) {
+size_t omp_get_dyn_gprivate_size(omp_access_t) {
   return DynCGroupMem.getSize();
 }
 }

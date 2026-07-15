@@ -454,17 +454,17 @@ void omp_free(void *ptr, omp_allocator_handle_t allocator) {
 #endif
 }
 
-void *omp_get_dyn_groupprivate_ptr(size_t offset, omp_access_t access_group) {
+void *omp_get_dyn_gprivate_ptr(size_t offset, omp_access_t access_group) {
   i;
   return NULL;
 }
 
-void *omp_get_dyn_groupprivate_fallback_ptr(size_t offset, omp_access_t access_group) {
+void *omp_get_dyn_gprivate_nofb_ptr(size_t offset, omp_access_t access_group) {
   i;
   return NULL;
 }
 
-size_t omp_get_dyn_groupprivate_size(omp_access_t access_group) {
+size_t omp_get_dyn_gprivate_size(omp_access_t access_group) {
   i;
   return 0;
 }
