@@ -2768,7 +2768,7 @@ public:
 
     /// 'parallel' construct 'num_threads' clause value, if present and it is an
     /// SPMD kernel.
-    Value *MaxThreads = nullptr;
+    SmallVector<Value *, 3> MaxThreads = {nullptr};
 
     /// Total number of iterations of the SPMD or Generic-SPMD kernel or null if
     /// it is a generic kernel.
@@ -2797,7 +2797,8 @@ public:
     bool HasNoWait = false;
     /// True if the kernel strictly requires the number of blocks and threads
     /// above to run.
-    bool StrictBlocksAndThreads = false;
+    bool StrictBlocks = false;
+    bool StrictThreads = false;
     /// The fallback mechanism for the shared memory.
     omp::OMPDynGroupprivateFallbackType DynCGroupMemFallback =
         omp::OMPDynGroupprivateFallbackType::Abort;
@@ -2807,12 +2808,13 @@ public:
     TargetKernelArgs(unsigned NumTargetItems, TargetDataRTArgs RTArgs,
                      Value *NumIterations, ArrayRef<Value *> NumTeams,
                      ArrayRef<Value *> NumThreads, Value *DynCGroupMem,
-                     bool HasNoWait, bool StrictBlocksAndThreads,
+                     bool HasNoWait, bool StrictBlocks, bool StrictThreads,
                      omp::OMPDynGroupprivateFallbackType DynCGroupMemFallback)
         : NumTargetItems(NumTargetItems), RTArgs(RTArgs),
           NumIterations(NumIterations), NumTeams(NumTeams),
           NumThreads(NumThreads), DynCGroupMem(DynCGroupMem),
-          HasNoWait(HasNoWait), StrictBlocksAndThreads(StrictBlocksAndThreads),
+          HasNoWait(HasNoWait), StrictBlocks(StrictBlocks),
+          StrictThreads(StrictThreads),
           DynCGroupMemFallback(DynCGroupMemFallback) {}
   };
 
@@ -3451,15 +3453,16 @@ public:
   LLVM_ABI static std::pair<int32_t, int32_t>
   readThreadBoundsForKernel(const Triple &T, Function &Kernel);
   LLVM_ABI static void writeThreadBoundsForKernel(const Triple &T,
-                                                  Function &Kernel, int32_t LB,
-                                                  int32_t UB);
+                                                  Function &Kernel,
+                                                  const SmallVectorImpl<int32_t> &LB,
+                                                  const SmallVectorImpl<int32_t> &UB);
 
   /// Read/write a bounds on teams for \p Kernel. Read will return 0 if none
   /// is set.
   LLVM_ABI static std::pair<int32_t, int32_t>
   readTeamBoundsForKernel(const Triple &T, Function &Kernel);
   LLVM_ABI static void writeTeamsForKernel(const Triple &T, Function &Kernel,
-                                           int32_t LB, int32_t UB);
+                                           const SmallVectorImpl<int32_t> &UB);
   ///}
 
 private:

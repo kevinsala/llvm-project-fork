@@ -11075,7 +11075,8 @@ static void emitTargetCallKernelLaunch(
 
     llvm::OpenMPIRBuilder::TargetKernelArgs Args(
         NumTargetItems, RTArgs, NumIterations, NumTeams, NumThreads,
-        DynCGroupMem, HasNoWait, /*StrictBlocksAndThreads=*/IsBare,
+        DynCGroupMem, HasNoWait, /*StrictBlocks=*/IsBare || NumTeams.size() > 1,
+        /*StrictThreads=*/IsBare || NumThreads.size() > 1,
         DynCGroupMemFallback);
 
     llvm::OpenMPIRBuilder::InsertPointTy AfterIP =

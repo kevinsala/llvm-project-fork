@@ -562,7 +562,7 @@ private:
   /// thread_limit clause.
   uint32_t getEffectiveNumBlocks(GenericDeviceTy &GenericDevice,
                                  uint32_t UserNumBlocks, uint64_t LoopTripCount,
-                                 uint32_t &EffectiveNumThreads,
+                                 uint32_t &EffectiveNumThreads, bool IsNumThreadsStrict,
                                  bool IsNumThreadsFromUser) const;
 
   /// Indicate if the kernel works in Generic SPMD, Generic, No-Loop
