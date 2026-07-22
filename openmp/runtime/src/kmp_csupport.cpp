@@ -4529,6 +4529,14 @@ omp_memspace_handle_t omp_get_dyn_gprivate_memspace(omp_access_t access_group) {
   return omp_null_mem_space;
 }
 
+int omp_get_num_threads_dim(int Dim) { return 0; }
+
+int omp_get_thread_num_dim(int Dim) { return 0; }
+
+int omp_get_team_num_dim(int Dim) { return 1; }
+
+int omp_get_num_teams_dim(int Dim) { return 1; }
+
 int __kmpc_get_target_offload(void) {
   if (!__kmp_init_serial) {
     __kmp_serial_initialize();

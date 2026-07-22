@@ -58,7 +58,7 @@ static bool shouldEnterStateMachine(bool IsSPMD) {
   // doing any work.  mapping::getMaxTeamThreads() does not include any of the
   // main thread's warp, so none of its threads can ever be active worker
   // threads.
-  return mapping::getThreadIdInBlock() < mapping::getMaxTeamThreads(IsSPMD);
+  return mapping::getTotalThreadIdInBlock() < mapping::getMaxTotalTeamThreads(IsSPMD);
 #else
   // On other architectures (e.g., Intel GPUs) all threads must enter the state
   // machine to satisfy the requirements of workgroup of synchronize::threads
@@ -71,7 +71,7 @@ static bool shouldEnterStateMachine(bool IsSPMD) {
 
 /// Simple generic state machine for worker threads.
 static void genericStateMachine(IdentTy *Ident) {
-  uint32_t TId = mapping::getThreadIdInBlock();
+  uint32_t TId = mapping::getTotalThreadIdInBlock();
 
   do {
     ParallelRegionFnTy WorkFn = nullptr;
@@ -139,7 +139,7 @@ int32_t __kmpc_target_init(KernelEnvironmentTy &KernelEnvironment,
   if (UseGenericStateMachine && shouldEnterStateMachine(IsSPMD))
     genericStateMachine(KernelEnvironment.Ident);
 
-  return mapping::getThreadIdInBlock();
+  return mapping::getTotalThreadIdInBlock();
 }
 
 /// De-Initialization

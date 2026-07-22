@@ -72,7 +72,7 @@ struct SharedMemorySmartStackTy {
 private:
   /// Compute the size of the storage space reserved for a thread.
   uint32_t computeThreadStorageTotal() {
-    uint32_t NumLanesInBlock = mapping::getNumberOfThreadsInBlock();
+    uint32_t NumLanesInBlock = mapping::getTotalNumberOfThreadsInBlock();
     return __builtin_align_down(state::SharedScratchpadSize / NumLanesInBlock,
                                 allocator::ALIGNMENT);
   }
@@ -98,7 +98,7 @@ static_assert(state::SharedScratchpadSize / mapping::MaxThreadsPerTeam <= 256,
     SharedMemorySmartStack;
 
 void SharedMemorySmartStackTy::init(bool IsSPMD) {
-  Usage[mapping::getThreadIdInBlock()] = 0;
+  Usage[mapping::getTotalThreadIdInBlock()] = 0;
 }
 
 void *SharedMemorySmartStackTy::push(uint64_t Bytes) {
@@ -114,7 +114,7 @@ void *SharedMemorySmartStackTy::push(uint64_t Bytes) {
   if (mapping::isMainThreadInGenericMode())
     StorageTotal *= mapping::getWarpSize();
 
-  int TId = mapping::getThreadIdInBlock();
+  int TId = mapping::getTotalThreadIdInBlock();
   if (Usage[TId] + AlignedBytes <= StorageTotal) {
     void *Ptr = getThreadDataTop(TId);
     Usage[TId] += AlignedBytes;
@@ -135,7 +135,7 @@ void *SharedMemorySmartStackTy::push(uint64_t Bytes) {
 void SharedMemorySmartStackTy::pop(void *Ptr, uint64_t Bytes) {
   uint64_t AlignedBytes = __builtin_align_up(Bytes, allocator::ALIGNMENT);
   if (utils::isSharedMemPtr(Ptr)) {
-    int TId = mapping::getThreadIdInBlock();
+    int TId = mapping::getTotalThreadIdInBlock();
     Usage[TId] -= AlignedBytes;
     return;
   }
@@ -162,7 +162,7 @@ struct DynCGroupMemTy {
       NativeOrNullPtr = NativePtr;
     if (Fallback == DynCGroupMemFallbackType::DefaultMem)
       FallbackPtr = static_cast<unsigned char *>(KLE->DynCGroupMemFbPtr) +
-                    Size * mapping::getBlockIdInKernel();
+                    Size * mapping::getTotalBlockIdInKernel();
   }
 
   /// Get the memory space of the buffer.
@@ -245,6 +245,9 @@ void state::TeamStateTy::init(bool IsSPMD) {
   ICVState.RunSchedVar = omp_sched_static;
   ICVState.RunSchedChunkVar = 1;
   ParallelTeamSize = 1;
+  ParallelTeamSizeDim[0] = 1;
+  ParallelTeamSizeDim[1] = 1;
+  ParallelTeamSizeDim[2] = 1;
   HasThreadState = false;
   ParallelRegionFnVar = nullptr;
 }
@@ -252,12 +255,18 @@ void state::TeamStateTy::init(bool IsSPMD) {
 bool state::TeamStateTy::operator==(const TeamStateTy &Other) const {
   return (ICVState == Other.ICVState) &
          (HasThreadState == Other.HasThreadState) &
-         (ParallelTeamSize == Other.ParallelTeamSize);
+         (ParallelTeamSize == Other.ParallelTeamSize) &
+         (ParallelTeamSizeDim[0] == Other.ParallelTeamSizeDim[0]) &
+         (ParallelTeamSizeDim[1] == Other.ParallelTeamSizeDim[1]) &
+         (ParallelTeamSizeDim[2] == Other.ParallelTeamSizeDim[2]);
 }
 
 void state::TeamStateTy::assertEqual(TeamStateTy &Other) const {
   ICVState.assertEqual(Other.ICVState);
   ASSERT(ParallelTeamSize == Other.ParallelTeamSize, nullptr);
+  ASSERT(ParallelTeamSizeDim[0] == Other.ParallelTeamSizeDim[0], nullptr);
+  ASSERT(ParallelTeamSizeDim[1] == Other.ParallelTeamSizeDim[1], nullptr);
+  ASSERT(ParallelTeamSizeDim[2] == Other.ParallelTeamSizeDim[2], nullptr);
   ASSERT(HasThreadState == Other.HasThreadState, nullptr);
 }
 
@@ -313,13 +322,13 @@ void state::enterDataEnvironment(IdentTy *Ident) {
   if (!config::mayUseThreadStates())
     return;
 
-  unsigned TId = mapping::getThreadIdInBlock();
+  unsigned TId = mapping::getTotalThreadIdInBlock();
   ThreadStateTy *NewThreadState = static_cast<ThreadStateTy *>(
       memory::allocGlobal(sizeof(ThreadStateTy), "ThreadStates alloc"));
   uintptr_t *ThreadStatesBitsPtr = reinterpret_cast<uintptr_t *>(&ThreadStates);
   if (!atomic::load(ThreadStatesBitsPtr, atomic::seq_cst)) {
     uint32_t Bytes =
-        sizeof(ThreadStates[0]) * mapping::getNumberOfThreadsInBlock();
+        sizeof(ThreadStates[0]) * mapping::getTotalNumberOfThreadsInBlock();
     void *ThreadStatesPtr =
         memory::allocGlobal(Bytes, "Thread state array allocation");
     __builtin_memset(ThreadStatesPtr, 0, Bytes);
@@ -340,7 +349,7 @@ void state::exitDataEnvironment() {
   ASSERT(config::mayUseThreadStates(),
          "Thread state modified while explicitly disabled!");
 
-  unsigned TId = mapping::getThreadIdInBlock();
+  unsigned TId = mapping::getTotalThreadIdInBlock();
   resetStateForThread(TId);
 }
 
@@ -371,9 +380,26 @@ void state::assumeInitialState(bool IsSPMD) {
   ASSERT(mapping::isSPMDMode() == IsSPMD, nullptr);
 }
 
-int state::getEffectivePTeamSize() {
+int state::getTotalEffectivePTeamSize() {
   int PTeamSize = state::ParallelTeamSize;
   return PTeamSize ? PTeamSize : mapping::getMaxTeamThreads();
+}
+
+int state::getEffectivePTeamSize(int Dim) {
+  int PTeamSize = 1;
+  switch (Dim) {
+  case mapping::DIM_X:
+    PTeamSize = state::ParallelTeamSizeDimX;
+    break;
+  case mapping::DIM_Y:
+    PTeamSize = state::ParallelTeamSizeDimY;
+    break;
+  case mapping::DIM_Z:
+    PTeamSize = state::ParallelTeamSizeDimZ;
+    break;
+  }
+
+  return PTeamSize ? PTeamSize : mapping::getMaxTeamThreads(Dim);
 }
 
 extern "C" {
@@ -409,7 +435,7 @@ void omp_set_schedule(omp_sched_t ScheduleKind, int ChunkSize) {
 }
 
 int omp_get_ancestor_thread_num(int Level) {
-  return returnValIfLevelIsActive(Level, mapping::getThreadIdInBlock(), 0);
+  return returnValIfLevelIsActive(Level, mapping::getTotalThreadIdInBlock(), 0);
 }
 
 int omp_get_thread_num(void) {
@@ -417,11 +443,35 @@ int omp_get_thread_num(void) {
 }
 
 int omp_get_team_size(int Level) {
-  return returnValIfLevelIsActive(Level, state::getEffectivePTeamSize(), 1);
+  return returnValIfLevelIsActive(Level, state::getTotalEffectivePTeamSize(), 1);
 }
 
 int omp_get_num_threads(void) {
-  return omp_get_level() != 1 ? 1 : state::getEffectivePTeamSize();
+  return omp_get_level() != 1 ? 1 : state::getTotalEffectivePTeamSize();
+}
+
+int omp_get_num_threads_dim(int Dim) {
+  if (Dim < 0 || Dim >= 3)
+    return 1;
+  return omp_get_level() != 1 ? 1 : state::getEffectivePTeamSize(Dim);
+}
+
+int omp_get_thread_num_dim(int Dim) {
+  if (Dim < 0 || Dim >= 3)
+    return 0;
+  return returnValIfLevelIsActive(omp_get_level(), mapping::getThreadIdInBlock(Dim), 0);
+}
+
+int omp_get_team_num_dim(int Dim) {
+  if (Dim < 0 || Dim >= 3)
+    return 0;
+  return mapping::getBlockIdInKernel(Dim);
+}
+
+int omp_get_num_teams_dim(int Dim) {
+  if (Dim < 0 || Dim >= 3)
+    return 1;
+  return mapping::getNumberOfBlocksInKernel(Dim);
 }
 
 int omp_get_thread_limit(void) { return mapping::getMaxTeamThreads(); }
@@ -472,9 +522,9 @@ int omp_get_device_from_uid(const char *DeviceUid) {
 
 const char *omp_get_uid_from_device(int DeviceNum) { return nullptr; }
 
-int omp_get_num_teams(void) { return mapping::getNumberOfBlocksInKernel(); }
+int omp_get_num_teams(void) { return mapping::getTotalNumberOfBlocksInKernel(); }
 
-int omp_get_team_num() { return mapping::getBlockIdInKernel(); }
+int omp_get_team_num() { return mapping::getTotalBlockIdInKernel(); }
 
 int omp_get_initial_device(void) { return -1; }
 

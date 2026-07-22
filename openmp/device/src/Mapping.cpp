@@ -27,9 +27,10 @@ extern const inline uint32_t __oclc_ABI_version = 500;
 #endif
 
 static bool isInLastWarp() {
-  uint32_t MainTId = utils::alignDown(mapping::getNumberOfThreadsInBlock() - 1,
+  /// KTODO: Check this
+  uint32_t MainTId = utils::alignDown(mapping::getNumberOfThreadsInBlock(mapping::DIM_X) - 1,
                                       mapping::getWarpSize());
-  return mapping::getThreadIdInBlock() == MainTId;
+  return mapping::getTotalThreadIdInBlock() == MainTId;
 }
 
 bool mapping::isMainThreadInGenericMode(bool IsSPMD) {
@@ -46,7 +47,7 @@ bool mapping::isMainThreadInGenericMode() {
 
 bool mapping::isInitialThreadInLevel0(bool IsSPMD) {
   if (IsSPMD)
-    return mapping::getThreadIdInBlock() == 0;
+    return mapping::getTotalThreadIdInBlock() == 0;
   return isInLastWarp();
 }
 
@@ -93,19 +94,38 @@ uint32_t mapping::getThreadIdInBlock(int32_t Dim) {
   return ThreadIdInBlock;
 }
 
+uint32_t mapping::getTotalThreadIdInBlock() {
+  return mapping::getThreadIdInBlock(mapping::DIM_X) +
+         mapping::getThreadIdInBlock(mapping::DIM_Y) * mapping::getNumberOfThreadsInBlock(mapping::DIM_X) + 
+         mapping::getThreadIdInBlock(mapping::DIM_Z) * mapping::getNumberOfThreadsInBlock(mapping::DIM_Y) * mapping::getNumberOfThreadsInBlock(mapping::DIM_X);
+}
+
 uint32_t mapping::getWarpSize() { return __gpu_num_lanes(); }
 
-uint32_t mapping::getMaxTeamThreads(bool IsSPMD) {
-  uint32_t BlockSize = mapping::getNumberOfThreadsInBlock();
-  // If we are in SPMD mode, remove one warp.
+/// KTODO: Investigate this.
+uint32_t mapping::getMaxTeamThreads(bool IsSPMD, int Dim) {
+  uint32_t BlockSize = mapping::getNumberOfThreadsInBlock(Dim);
+  // If we are not in SPMD mode, remove one warp.
   return BlockSize - (!IsSPMD * mapping::getWarpSize());
 }
-uint32_t mapping::getMaxTeamThreads() {
-  return mapping::getMaxTeamThreads(mapping::isSPMDMode());
+uint32_t mapping::getMaxTeamThreads(int Dim) {
+  return mapping::getMaxTeamThreads(mapping::isSPMDMode(), Dim);
+}
+
+uint32_t mapping::getMaxTotalTeamThreads(bool IsSPMD) {
+  uint32_t BlockSize = mapping::getTotalNumberOfThreadsInBlock();
+  // If we are not in SPMD mode, remove one warp.
+  return BlockSize - (!IsSPMD * mapping::getWarpSize());
 }
 
 uint32_t mapping::getNumberOfThreadsInBlock(int32_t Dim) {
   return __gpu_num_threads(Dim);
+}
+
+uint32_t mapping::getTotalNumberOfThreadsInBlock() {
+  return mapping::getNumberOfThreadsInBlock(mapping::DIM_X) *
+         mapping::getNumberOfThreadsInBlock(mapping::DIM_Y) *
+         mapping::getNumberOfThreadsInBlock(mapping::DIM_Z);
 }
 
 uint32_t mapping::getNumberOfThreadsInKernel() {
@@ -119,7 +139,7 @@ uint32_t mapping::getNumberOfThreadsInKernel() {
 
 uint32_t mapping::getWarpIdInBlock() {
   uint32_t WarpID =
-      mapping::getThreadIdInBlock(mapping::DIM_X) / mapping::getWarpSize();
+      mapping::getTotalThreadIdInBlock() / mapping::getWarpSize();
   ASSERT(WarpID < mapping::getNumberOfWarpsInBlock(), nullptr);
   return WarpID;
 }
@@ -130,13 +150,28 @@ uint32_t mapping::getBlockIdInKernel(int32_t Dim) {
   return BlockId;
 }
 
+uint32_t mapping::getTotalBlockIdInKernel() {
+  // The X dimension is the fastest dimension.
+  return mapping::getBlockIdInKernel(mapping::DIM_X) +
+         (mapping::getBlockIdInKernel(mapping::DIM_Y) +
+          mapping::getBlockIdInKernel(mapping::DIM_Z) *
+          mapping::getNumberOfBlocksInKernel(mapping::DIM_Y)) *
+         mapping::getNumberOfBlocksInKernel(mapping::DIM_X);
+}
+
 uint32_t mapping::getNumberOfWarpsInBlock() {
-  return utils::roundUp(mapping::getNumberOfThreadsInBlock(),
+  return utils::roundUp(mapping::getTotalNumberOfThreadsInBlock(),
                         mapping::getWarpSize());
 }
 
 uint32_t mapping::getNumberOfBlocksInKernel(int32_t Dim) {
   return __gpu_num_blocks(Dim);
+}
+
+uint32_t mapping::getTotalNumberOfBlocksInKernel() {
+  return mapping::getNumberOfBlocksInKernel(mapping::DIM_X) *
+         mapping::getNumberOfBlocksInKernel(mapping::DIM_Y) *
+         mapping::getNumberOfBlocksInKernel(mapping::DIM_Z);
 }
 
 uint32_t mapping::getNumberOfProcessorElements() {
@@ -165,10 +200,12 @@ bool mapping::isGenericMode() { return !isSPMDMode(); }
 
 extern "C" {
 [[gnu::noinline]] uint32_t __kmpc_get_hardware_thread_id_in_block() {
-  return mapping::getThreadIdInBlock();
+  /// KTODO: What should we return here?
+  return mapping::getThreadIdInBlock(mapping::DIM_X);
 }
 
 [[gnu::noinline]] uint32_t __kmpc_get_hardware_num_threads_in_block() {
+  /// KTODO: What should we return here?
   return mapping::getNumberOfThreadsInBlock(mapping::DIM_X);
 }
 

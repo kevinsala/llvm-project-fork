@@ -55,7 +55,7 @@ static void gpu_irregular_warp_reduce(void *reduce_data,
 static uint32_t gpu_irregular_simd_reduce(void *reduce_data,
                                           ShuffleReductFnTy shflFct) {
   uint32_t size, remote_id, physical_lane_id;
-  physical_lane_id = mapping::getThreadIdInBlock() % mapping::getWarpSize();
+  physical_lane_id = mapping::getTotalThreadIdInBlock() % mapping::getWarpSize();
   __kmpc_impl_lanemask_t lanemask_lt = mapping::lanemaskLT();
   __kmpc_impl_lanemask_t Liveness = mapping::activemask();
   uint32_t logical_lane_id = utils::popc(Liveness & lanemask_lt) * 2;
@@ -137,7 +137,7 @@ static uint32_t gpu_block_reduce(void *reduce_data, ShuffleReductFnTy shflFct,
 static int32_t nvptx_parallel_reduce_nowait(void *reduce_data,
                                             ShuffleReductFnTy shflFct,
                                             InterWarpCopyFnTy cpyFct) {
-  uint32_t BlockThreadId = mapping::getThreadIdInBlock();
+  uint32_t BlockThreadId = mapping::getTotalThreadIdInBlock();
   if (mapping::isMainThreadInGenericMode(/*IsSPMD=*/false))
     BlockThreadId = 0;
   uint32_t NumThreads = omp_get_num_threads();
@@ -171,7 +171,7 @@ static int32_t nvptx_parallel_reduce_nowait(void *reduce_data,
       gpu_irregular_warp_reduce(
           reduce_data, shflFct,
           /*LaneCount=*/NumThreads % mapping::getWarpSize(),
-          /*LaneId=*/mapping::getThreadIdInBlock() % mapping::getWarpSize());
+          /*LaneId=*/mapping::getTotalThreadIdInBlock() % mapping::getWarpSize());
 
     // When we have more than [mapping::getWarpSize()] number of threads
     // a block reduction is performed here.
@@ -237,8 +237,8 @@ int32_t __kmpc_gpu_xteam_reduce_nowait(IdentTy *Loc, void *reduce_data,
 
   if (mapping::isSPMDMode()) {
     // In SPMD mode all workers participate in the teams reduction.
-    ThreadId = mapping::getThreadIdInBlock();
-    NumThreads = mapping::getNumberOfThreadsInBlock();
+    ThreadId = mapping::getTotalThreadIdInBlock();
+    NumThreads = mapping::getTotalNumberOfThreadsInBlock();
   } else {
     // In generic mode, only the team master participates in the teams
     // reduction because the workers are waiting for parallel work.
