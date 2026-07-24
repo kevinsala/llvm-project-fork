@@ -6609,7 +6609,7 @@ void CGOpenMPRuntime::emitNumTeamsForTargetDirective(
          "Clauses associated with the teams directive expected to be emitted "
          "only for the host!");
   CGBuilderTy &Bld = CGF.Builder;
-  int32_t MinNT = -1, MaxNT = -1;
+  int32_t MinNT = -1;
   llvm::SmallVector<int32_t> MaxNTs;
   llvm::SmallVector<const Expr *> Exprs;
   getNumTeamsExprForTargetDirective(CGF, D, MinNT, MaxNTs, Exprs);
@@ -6786,7 +6786,6 @@ const Expr *CGOpenMPRuntime::getNumThreadsExprForTargetDirective(
 
         SmallVector<int32_t> UBs;
         for (const Expr *E : Exprs) {
-          int32_t UB = -1;
           if (auto Constant = GetIntegerConstant(E))
             UBs.push_back(Constant->getZExtValue());
         }
