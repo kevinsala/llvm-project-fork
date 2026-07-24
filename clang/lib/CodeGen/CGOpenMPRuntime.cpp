@@ -6648,7 +6648,7 @@ void CGOpenMPRuntime::emitNumTeamsForTargetDirective(
     }
   }
 
-  assert(MinNT == MaxNT && "Num threads ranges require handling here.");
+  assert(MinNT == MaxNTs[0] && "Num teams ranges require handling here.");
   Values.push_back(llvm::ConstantInt::getSigned(CGF.Int32Ty, MinNT));
 }
 
