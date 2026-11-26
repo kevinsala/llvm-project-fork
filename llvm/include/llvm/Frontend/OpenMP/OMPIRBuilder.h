@@ -3717,20 +3717,23 @@ public:
   ///
   ///{
 
-  /// Read/write a bounds on threads for \p Kernel. Read will return 0 if none
-  /// is set.
+  /// Read/write bounds on threads for \p Kernel. Readers return flattened
+  /// bounds, or 0 if unknown. Writers accept one to three dimensions;
+  /// nonpositive values indicate unknown bounds.
   LLVM_ABI static std::pair<int32_t, int32_t>
   readThreadBoundsForKernel(const Triple &T, Function &Kernel);
   LLVM_ABI static void writeThreadBoundsForKernel(const Triple &T,
-                                                  Function &Kernel, int32_t LB,
-                                                  int32_t UB);
+                                                  Function &Kernel,
+                                                  ArrayRef<int32_t> LB,
+                                                  ArrayRef<int32_t> UB);
 
-  /// Read/write a bounds on teams for \p Kernel. Read will return 0 if none
-  /// is set.
+  /// Read/write bounds on teams for \p Kernel, using the same dimensional
+  /// convention as thread bounds. Read will return 0 if none is set.
   LLVM_ABI static std::pair<int32_t, int32_t>
   readTeamBoundsForKernel(const Triple &T, Function &Kernel);
   LLVM_ABI static void writeTeamsForKernel(const Triple &T, Function &Kernel,
-                                           int32_t LB, int32_t UB);
+                                           ArrayRef<int32_t> LB,
+                                           ArrayRef<int32_t> UB);
   ///}
 
 private:

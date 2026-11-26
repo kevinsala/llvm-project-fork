@@ -6324,6 +6324,74 @@ TEST_F(OpenMPIRBuilderTest, EmitMapperCall) {
   EXPECT_TRUE(MapperCall->getOperand(8)->getType()->isPointerTy());
 }
 
+TEST_F(OpenMPIRBuilderTest, KernelBoundsDimensions) {
+  for (StringRef Target : {"amdgcn-amd-amdhsa", "nvptx64-nvidia-cuda",
+                           "spirv64-unknown-unknown"}) {
+    Triple T(Target);
+    for (unsigned Dims = 1; Dims <= 3; ++Dims) {
+      Function *Kernel = Function::Create(F->getFunctionType(),
+                                          GlobalValue::ExternalLinkage,
+                                          "bounds", M.get());
+      SmallVector<int32_t, 3> LB(Dims, 2), UB(Dims, 4);
+      int32_t TotalLB = 1, TotalUB = 1;
+      for (unsigned I = 0; I < Dims; ++I) {
+        TotalLB *= 2;
+        TotalUB *= 4;
+      }
+      OpenMPIRBuilder::writeThreadBoundsForKernel(T, *Kernel, LB, UB);
+      auto Threads = OpenMPIRBuilder::readThreadBoundsForKernel(T, *Kernel);
+      EXPECT_EQ(Threads.first, T.isAMDGPU() ? TotalLB : 0);
+      EXPECT_EQ(Threads.second, TotalUB);
+      OpenMPIRBuilder::writeTeamsForKernel(T, *Kernel, LB, UB);
+      EXPECT_FALSE(Kernel->hasFnAttribute("omp_target_num_teams"));
+      if (T.isAMDGPU()) {
+        StringRef Expected =
+            Dims == 1 ? "4,1,1" : Dims == 2 ? "4,4,1" : "4,4,4";
+        EXPECT_EQ(Kernel->getFnAttribute("amdgpu-max-num-workgroups")
+                      .getValueAsString(),
+                  Expected);
+      }
+      if (T.isNVPTX())
+        EXPECT_EQ(Kernel->getFnAttributeAsParsedInteger("nvvm.maxclusterrank"),
+                  TotalUB);
+      if (T.isSPIRV())
+        EXPECT_FALSE(Kernel->hasFnAttribute("nvvm.maxntid"));
+      OpenMPIRBuilder::writeTeamsForKernel(T, *Kernel, UB, UB);
+      EXPECT_EQ(Kernel->getFnAttributeAsParsedInteger("omp_target_num_teams"),
+                TotalUB);
+    }
+  }
+}
+
+TEST_F(OpenMPIRBuilderTest, KernelBoundsUnknownAndOverflow) {
+  Triple T("amdgcn-amd-amdhsa");
+  SmallVector<SmallVector<int32_t, 3>, 4> UnknownBounds = {
+      {0}, {4, -1}, {4, 0}, {65536, 65536}};
+  for (const auto &UB : UnknownBounds) {
+    Function *Kernel = Function::Create(F->getFunctionType(),
+                                        GlobalValue::ExternalLinkage,
+                                        "unknown", M.get());
+    OpenMPIRBuilder::writeThreadBoundsForKernel(T, *Kernel, {1}, UB);
+    EXPECT_FALSE(Kernel->hasFnAttribute("omp_target_thread_limit"));
+    OpenMPIRBuilder::writeTeamsForKernel(T, *Kernel, {2}, UB);
+    EXPECT_FALSE(Kernel->hasFnAttribute("amdgpu-max-num-workgroups"));
+    EXPECT_FALSE(Kernel->hasFnAttribute("omp_target_num_teams"));
+  }
+  OpenMPIRBuilder::writeThreadBoundsForKernel(T, *F, {0}, {4, 8});
+  EXPECT_EQ(F->getFnAttribute("amdgpu-flat-work-group-size").getValueAsString(),
+            "1,32");
+}
+
+TEST_F(OpenMPIRBuilderTest, KernelBoundsNVPTXReader) {
+  Triple T("nvptx64-nvidia-cuda");
+  F->addFnAttr("nvvm.maxntid", "64");
+  EXPECT_EQ(OpenMPIRBuilder::readThreadBoundsForKernel(T, *F).second, 64);
+  F->addFnAttr("omp_target_thread_limit", "32");
+  EXPECT_EQ(OpenMPIRBuilder::readThreadBoundsForKernel(T, *F).second, 32);
+  OpenMPIRBuilder::writeThreadBoundsForKernel(T, *F, {1}, {128});
+  EXPECT_EQ(OpenMPIRBuilder::readThreadBoundsForKernel(T, *F).second, 64);
+}
+
 TEST_F(OpenMPIRBuilderTest, TargetEnterData) {
   OpenMPIRBuilder OMPBuilder(*M);
   OMPBuilder.initialize();
